@@ -63,6 +63,7 @@ function confidenceTone(c: number) {
 
 export default function HomePage() {
   const [fixtures, setFixtures] = useState<FixtureCard[]>([]);
+  const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("legs");
   const [legCount, setLegCount] = useState(3);
@@ -111,8 +112,15 @@ export default function HomePage() {
         const sb = await sbRes.json();
         if (!fixRes.ok) throw new Error(data.error || "Failed to load fixtures");
         if (!cancelled) {
-          setFixtures(data.games);
-          setSelectedGames(data.games.slice(0, 4).map((g: FixtureCard) => g.id));
+          const games = data.games as FixtureCard[];
+          const upcomingRound = games[0]?.round ?? null;
+          setFixtures(games);
+          setSelectedRound(upcomingRound);
+          setSelectedGames(
+            upcomingRound == null
+              ? []
+              : games.filter((g) => g.round === upcomingRound).map((g) => g.id),
+          );
           setSportsbetStatus(sb);
         }
       } catch (e) {
@@ -145,6 +153,35 @@ export default function HomePage() {
   }, [bookmaker]);
 
   const selectedSet = useMemo(() => new Set(selectedGames), [selectedGames]);
+
+  const rounds = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const g of fixtures) {
+      if (!map.has(g.round)) map.set(g.round, g.roundName);
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([round, roundName]) => ({ round, roundName }));
+  }, [fixtures]);
+
+  const roundFixtures = useMemo(
+    () =>
+      selectedRound == null
+        ? []
+        : fixtures.filter((g) => g.round === selectedRound),
+    [fixtures, selectedRound],
+  );
+
+  const selectedRoundName =
+    rounds.find((r) => r.round === selectedRound)?.roundName ??
+    (selectedRound != null ? `Round ${selectedRound}` : "—");
+
+  function selectRound(round: number) {
+    setSelectedRound(round);
+    setSelectedGames(
+      fixtures.filter((g) => g.round === round).map((g) => g.id),
+    );
+  }
 
   function toggleGame(id: number) {
     setSelectedGames((prev) =>
@@ -274,7 +311,7 @@ export default function HomePage() {
                 className="mt-2 font-[family-name:var(--font-teko)] text-5xl text-[var(--ink)]"
                 style={{ fontWeight: 600 }}
               >
-                Round {fixtures[0]?.round ?? "—"}
+                Round {selectedRound ?? "—"}
               </p>
               <p className="mt-1 text-sm text-[var(--muted)]">
                 Squiggle fixtures + ladder · modelled player markets
@@ -283,7 +320,7 @@ export default function HomePage() {
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="border border-[var(--line)] bg-black/20 p-3">
                 <p className="font-[family-name:var(--font-teko)] text-3xl text-[var(--orange)]">
-                  {fixtures.length || "—"}
+                  {roundFixtures.length || "—"}
                 </p>
                 <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
                   Games
@@ -518,7 +555,7 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={runScan}
-                disabled={scanning || isPending || !fixtures.length}
+                disabled={scanning || isPending || !selectedGames.length}
                 className="relative overflow-hidden bg-[var(--orange)] px-6 py-4 text-left text-[#111] transition enabled:hover:bg-[var(--orange-hot)] disabled:opacity-60"
               >
                 <span
@@ -613,31 +650,55 @@ export default function HomePage() {
         id="fixtures"
         className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8"
       >
-        <div className="mb-4 flex items-end justify-between gap-4">
+        <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2
               className="font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
               style={{ fontWeight: 600 }}
             >
-              Upcoming fixtures
+              {selectedRoundName}
             </h2>
             <p className="text-sm text-[var(--muted)]">
               Select games to include. Leave a few on for a wider scan.
             </p>
           </div>
-          <button
-            type="button"
-            className="text-sm font-semibold text-[var(--leather)]"
-            onClick={() =>
-              setSelectedGames(
-                selectedGames.length === fixtures.length
-                  ? []
-                  : fixtures.map((g) => g.id),
-              )
-            }
-          >
-            {selectedGames.length === fixtures.length ? "Clear all" : "Select all"}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-[var(--muted-strong)]">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                Round
+              </span>
+              <select
+                className="round-select"
+                value={selectedRound ?? ""}
+                disabled={!rounds.length}
+                onChange={(e) => selectRound(Number(e.target.value))}
+              >
+                {rounds.map((r) => (
+                  <option key={r.round} value={r.round}>
+                    {r.roundName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="text-sm font-semibold text-[var(--leather)]"
+              onClick={() =>
+                setSelectedGames(
+                  selectedGames.length === roundFixtures.length &&
+                    roundFixtures.every((g) => selectedSet.has(g.id))
+                    ? []
+                    : roundFixtures.map((g) => g.id),
+                )
+              }
+            >
+              {selectedGames.length === roundFixtures.length &&
+              roundFixtures.length > 0 &&
+              roundFixtures.every((g) => selectedSet.has(g.id))
+                ? "Clear all"
+                : "Select all"}
+            </button>
+          </div>
         </div>
 
         {loadError && (
@@ -647,7 +708,7 @@ export default function HomePage() {
         )}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {fixtures.map((g, i) => {
+          {roundFixtures.map((g, i) => {
             const on = selectedSet.has(g.id);
             return (
               <button
@@ -662,7 +723,7 @@ export default function HomePage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-                      {g.roundName} · {formatMatchDate(g.date)}
+                      {formatMatchDate(g.date)}
                     </p>
                     <p
                       className="mt-1 font-[family-name:var(--font-teko)] text-[1.35rem] leading-none text-[var(--ink)]"

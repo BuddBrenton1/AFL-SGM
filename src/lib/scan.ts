@@ -84,7 +84,7 @@ export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
     fetchStandings(2026),
   ]);
   const ladderByTeam = new Map(standings.map((s) => [s.team, s]));
-  return games.slice(0, 16).map((g) => enrichGame(g, ladderByTeam));
+  return games.map((g) => enrichGame(g, ladderByTeam));
 }
 
 export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
