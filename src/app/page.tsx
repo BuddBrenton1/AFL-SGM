@@ -636,9 +636,8 @@ export default function HomePage() {
                   {book.label} prices only
                 </span>
                 <span className="mt-1 block text-xs text-[var(--muted)]">
-                  Only build multis where every leg has a live {book.label} price
-                  ({book.shortLabel} badge). Fixtures with sparse props are skipped —
-                  results may be empty.
+                  Build multis only from live {book.label} markets ({book.shortLabel}
+                  badge on every leg). Fixtures with too few props are skipped.
                 </span>
               </span>
             </label>
@@ -1028,7 +1027,7 @@ export default function HomePage() {
                 <p className="font-semibold text-[var(--ink)]">No multis found</p>
                 <p>
                   {result.target.sportsbetOnly
-                    ? `No fully live ${resultBook.label} SGMs for this slate. Turn off “${resultBook.label} prices only”, pick fewer legs, raise max price per leg, or try another round.`
+                    ? `Not enough live ${resultBook.label} markets on this slate for a full SGM. Try fewer legs, a higher max price per leg, more fixtures, or turn off “${resultBook.label} prices only”.`
                     : "Try a wider odds band, fewer legs, lower confidence, or select more fixtures."}
                 </p>
               </div>

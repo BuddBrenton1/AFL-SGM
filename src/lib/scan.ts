@@ -4,6 +4,7 @@ import { fetchStandings, fetchUpcomingGames } from "./squiggle";
 import {
   applySportsbetPrices,
   getSportsbetConfigStatus,
+  legsFromSportsbetBoard,
   loadSportsbetBoard,
   lookupSportsbetBoard,
 } from "./sportsbet";
@@ -131,22 +132,24 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
   for (const game of selected) {
     const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
-    const rawLegs = generateLegsForGame(game);
-    let legs = applySportsbetPrices(rawLegs, board, bookmaker);
+    let legs;
 
     if (req.sportsbetOnly) {
       if (!board) {
         gamesSkippedNoBoard += 1;
         continue;
       }
-      const priced = legs.filter((l) => l.sportsbetOdds != null);
+      // Build from live board lines so every leg is book-priced
+      legs = legsFromSportsbetBoard(board, game, bookmaker);
       const minLegsNeeded =
         mode === "legs" ? Math.min(25, Math.max(2, req.legCount ?? 3)) : 2;
-      if (priced.length < minLegsNeeded) {
+      if (legs.length < minLegsNeeded) {
         gamesSkippedSparsePrices += 1;
         continue;
       }
-      legs = priced;
+    } else {
+      const rawLegs = generateLegsForGame(game);
+      legs = applySportsbetPrices(rawLegs, board, bookmaker);
     }
 
     const scanned = deepScanGame({
@@ -200,7 +203,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   }
   if (req.sportsbetOnly) {
     scanNotes.push(
-      `${book.label}-only: every leg must have a live ${book.shortLabel} price — no model fill-ins`,
+      `${book.label}-only: building SGMs from live ${book.shortLabel} markets only — no model fill-ins`,
     );
     if (gamesSkippedNoBoard > 0) {
       scanNotes.push(

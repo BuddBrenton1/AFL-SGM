@@ -584,6 +584,199 @@ export function applySportsbetPrices(
   });
 }
 
+/** Milestone N+ from an Over line (Over 14.5 → 15, Over 15 → 15). */
+function thresholdFromOverPoint(point: number): number {
+  return Number.isInteger(point) ? point : Math.ceil(point);
+}
+
+function playerSurname(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] || name;
+}
+
+type BoardLegSpec = {
+  market: MarketType;
+  label: string;
+  shortLabel: string;
+  playerName?: string;
+  threshold?: number;
+  correlationGroup: string;
+  selection: string;
+};
+
+function boardLineToSpec(line: SportsbetPriceLine): BoardLegSpec | null {
+  const price = line.price;
+  if (!Number.isFinite(price) || price < 1.01 || price > 5) return null;
+
+  if (line.marketKey === "h2h") {
+    return {
+      market: "match_result",
+      label: `${line.name} Win`,
+      shortLabel: `${line.name} W`,
+      correlationGroup: "match-result",
+      selection: line.name,
+    };
+  }
+
+  if (line.marketKey === "totals" && isOverOutcome(line.name) && line.point != null) {
+    return {
+      market: "total_points",
+      label: `Total Points Over ${line.point}`,
+      shortLabel: `O${line.point}`,
+      threshold: line.point,
+      correlationGroup: "totals",
+      selection: `Over ${line.point}`,
+    };
+  }
+
+  if (
+    line.marketKey === "player_goal_scorer_anytime" &&
+    line.description &&
+    (line.name.toLowerCase() === "yes" || isOverOutcome(line.name))
+  ) {
+    const player = line.description;
+    return {
+      market: "player_goal",
+      label: `${player} 1+ Goals`,
+      shortLabel: `${playerSurname(player)} 1+G`,
+      playerName: player,
+      threshold: 1,
+      correlationGroup: `player:${normalizePersonName(player)}`,
+      selection: "Anytime scorer",
+    };
+  }
+
+  const playerOverMarkets: {
+    keys: string[];
+    market: MarketType;
+    unit: string;
+    short: string;
+  }[] = [
+    {
+      keys: ["player_goals_scored_over"],
+      market: "player_goal",
+      unit: "Goals",
+      short: "G",
+    },
+    {
+      keys: ["player_disposals", "player_disposals_over"],
+      market: "player_disposal",
+      unit: "Disposals",
+      short: "D",
+    },
+    {
+      keys: ["player_tackles_over"],
+      market: "player_tackle",
+      unit: "Tackles",
+      short: "T",
+    },
+    {
+      keys: ["player_marks_over"],
+      market: "player_mark",
+      unit: "Marks",
+      short: "M",
+    },
+  ];
+
+  for (const spec of playerOverMarkets) {
+    if (!spec.keys.includes(line.marketKey)) continue;
+    if (!line.description || line.point == null || !isOverOutcome(line.name)) {
+      return null;
+    }
+    const threshold = thresholdFromOverPoint(line.point);
+    const player = line.description;
+    return {
+      market: spec.market,
+      label: `${player} ${threshold}+ ${spec.unit}`,
+      shortLabel: `${playerSurname(player)} ${threshold}+${spec.short}`,
+      playerName: player,
+      threshold,
+      correlationGroup: `player:${normalizePersonName(player)}`,
+      selection: `Over ${line.point}`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Build scan legs directly from live book lines so bookmaker-only mode
+ * always has fully priced candidates (not just model legs that happen to match).
+ */
+export function legsFromSportsbetBoard(
+  board: SportsbetEventOdds,
+  game: {
+    id: number;
+    homeTeam: string;
+    awayTeam: string;
+    homePlayers: { id: string; name: string; team: string }[];
+    awayPlayers: { id: string; name: string; team: string }[];
+  },
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
+): CandidateLeg[] {
+  const book = getBookmaker(bookmakerId);
+  const roster = [...game.homePlayers, ...game.awayPlayers];
+  const seen = new Set<string>();
+  const legs: CandidateLeg[] = [];
+
+  for (const line of board.lines) {
+    const spec = boardLineToSpec(line);
+    if (!spec) continue;
+
+    const key = [
+      spec.market,
+      spec.playerName ? normalizePersonName(spec.playerName) : "",
+      spec.threshold ?? "",
+      spec.market === "match_result" ? normalizeName(line.name) : "",
+    ].join(":");
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const sportsbetOdds = roundOdds(line.price);
+    // Mild vig haircut so confidence isn't just 1/odds
+    const probability = Math.min(0.92, Math.max(0.08, (1 / sportsbetOdds) * 0.94));
+    const player = spec.playerName
+      ? roster.find((p) => playerNamesMatch(p.name, spec.playerName!))
+      : undefined;
+
+    const factors = [
+      {
+        key: "bookmaker",
+        label: book.label,
+        impact: "neutral" as const,
+        detail: `Live ${book.label} ${spec.selection} @ $${sportsbetOdds.toFixed(2)}`,
+        weight: 0,
+      },
+    ];
+
+    legs.push({
+      id: `${game.id}:sb:${key}:${sportsbetOdds}`,
+      gameId: game.id,
+      market: spec.market,
+      label: spec.label,
+      shortLabel: spec.shortLabel,
+      playerId: player?.id,
+      playerName: spec.playerName,
+      teamId: player?.team as CandidateLeg["teamId"],
+      threshold: spec.threshold,
+      probability,
+      odds: sportsbetOdds,
+      modelOdds: undefined,
+      sportsbetOdds,
+      sportsbetMarket: line.marketKey,
+      sportsbetLink: line.link ?? board.eventLink,
+      sportsbetPoint: line.point,
+      sportsbetSelection: spec.selection,
+      confidence: confidenceFromFactors(probability, factors),
+      valueScore: valueScore(probability, sportsbetOdds),
+      factors,
+      correlationGroup: spec.correlationGroup,
+    });
+  }
+
+  return legs.sort((a, b) => a.odds - b.odds);
+}
+
 export function sportsbetCombinedOdds(legs: CandidateLeg[]): number | null {
   const prices = legs.map((l) => l.sportsbetOdds).filter((x): x is number => x != null);
   if (prices.length !== legs.length) return null;
