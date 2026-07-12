@@ -654,8 +654,8 @@ export default function HomePage() {
                 key={g.id}
                 type="button"
                 onClick={() => toggleGame(g.id)}
-                className={`fixture-card border p-3.5 text-left ${
-                  on ? "is-on" : "hover:border-[var(--orange)]/40"
+                className={`fixture-card p-3.5 text-left ${
+                  on ? "is-on" : "hover:border-[var(--orange)]/70"
                 }`}
                 style={{ animationDelay: `${i * 40}ms` }}
               >
@@ -682,16 +682,16 @@ export default function HomePage() {
                     </p>
                   </div>
                   <span
-                    className={`mt-0.5 h-4 w-4 shrink-0 border-2 ${
+                    className={`mt-0.5 h-4 w-4 shrink-0 rounded-md border-2 ${
                       on
-                        ? "border-[var(--turf)] bg-[var(--flood)]"
-                        : "border-[var(--stone)]"
+                        ? "border-[var(--orange)] bg-[var(--orange)]"
+                        : "border-[var(--orange)]/50"
                     }`}
                   />
                 </div>
 
                 {g.prediction && (
-                  <div className="mt-2.5 border border-[var(--line)] bg-black/25 p-2">
+                  <div className="mt-2.5 rounded-xl border border-[var(--orange)]/25 bg-black/25 p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--muted)]">
                         Win %
