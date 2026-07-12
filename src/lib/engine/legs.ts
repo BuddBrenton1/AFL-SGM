@@ -296,6 +296,8 @@ function scoreMarkLeg(
   threshold: number,
   isHome: boolean,
 ): CandidateLeg | null {
+  // Skip disposal-inferred mark lines (e.g. Parish 28 disp → fake 6 marks/game).
+  if (!player.marksExplicit) return null;
   if (player.form.marksAvg < threshold * 0.55) return null;
   const teamIns = isHome ? game.homeInsOuts : game.awayInsOuts;
   if (!isPlayerNamed(player.name, teamIns).named) return null;

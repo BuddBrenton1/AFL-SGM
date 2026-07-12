@@ -65,6 +65,8 @@ export interface PlayerProfile {
   form: PlayerSeasonForm;
   /** 0–1 reliability of minutes/role */
   roleStability: number;
+  /** True when marksAvg was supplied (not inferred from disposals). */
+  marksExplicit?: boolean;
 }
 
 export interface TeamInsOuts {

@@ -1,12 +1,21 @@
 import type { PlayerProfile, PlayerRole, PlayerSeasonForm, TeamId } from "./types";
 
-function form(partial: Partial<PlayerSeasonForm> & {
+type FormInput = Partial<PlayerSeasonForm> & {
   goalsAvg: number;
   disposalsAvg: number;
-}): PlayerSeasonForm {
+};
+
+type BuiltForm = PlayerSeasonForm & {
+  /** False when marksAvg was only inferred from disposals (unreliable for mids). */
+  marksExplicit: boolean;
+};
+
+function form(partial: FormInput): BuiltForm {
   const g = partial.goalsAvg;
   const d = partial.disposalsAvg;
-  const m = partial.marksAvg ?? Math.max(2, d * 0.22);
+  const marksExplicit = partial.marksAvg != null;
+  // Contested mids dispose a lot without marking — never invent ~6 marks from 28 disposals.
+  const m = partial.marksAvg ?? Math.max(2, Math.min(3.5, d * 0.11));
   const t = partial.tacklesAvg ?? Math.max(2, d * 0.18);
   const last5Goals = partial.last5Goals ?? [
     Math.max(0, Math.round(g + 1)),
@@ -35,7 +44,8 @@ function form(partial: Partial<PlayerSeasonForm> & {
     awayDisposalsAvg: partial.awayDisposalsAvg ?? d * 0.95,
     last5Goals,
     last5Disposals,
-    last5Marks: partial.last5Marks ?? last5Disposals.map((x) => Math.round(x * 0.22)),
+    last5Marks:
+      partial.last5Marks ?? last5Disposals.map((x) => Math.round(x * 0.11)),
     last5Tackles: partial.last5Tackles ?? last5Disposals.map((x) => Math.round(x * 0.16)),
     goalHitRates: partial.goalHitRates ?? {
       "1+": Math.min(0.95, 0.35 + g * 0.28),
@@ -48,6 +58,7 @@ function form(partial: Partial<PlayerSeasonForm> & {
       "25+": Math.min(0.9, Math.max(0.05, (d - 18) * 0.06)),
       "30+": Math.min(0.8, Math.max(0.03, (d - 24) * 0.07)),
     },
+    marksExplicit,
   };
 }
 
@@ -57,10 +68,20 @@ function p(
   team: TeamId,
   role: PlayerRole,
   jumper: number,
-  f: ReturnType<typeof form>,
+  f: BuiltForm,
   roleStability = 0.9,
 ): PlayerProfile {
-  return { id, name, team, role, jumper, form: f, roleStability };
+  const { marksExplicit, ...seasonForm } = f;
+  return {
+    id,
+    name,
+    team,
+    role,
+    jumper,
+    form: seasonForm,
+    roleStability,
+    marksExplicit,
+  };
 }
 
 /** Key SGM candidates per club — form tuned to mid-2026 ladder context. */

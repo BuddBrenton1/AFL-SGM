@@ -5,7 +5,7 @@ import {
 } from "./bookmakers";
 import { resolveTeamId } from "./teams";
 import type { CandidateLeg, MarketType } from "./types";
-import { combineOdds, roundOdds, valueScore } from "./engine/odds";
+import { combineOdds, confidenceFromFactors, roundOdds, valueScore } from "./engine/odds";
 
 const BASE = "https://api.the-odds-api.com/v4";
 const SPORT = "aussierules_afl";
@@ -522,14 +522,38 @@ export function applySportsbetPrices(
     if (!line) return leg;
 
     const sportsbetOdds = roundOdds(line.price);
-    const impliedProb = 1 / Math.max(sportsbetOdds, 1.01);
+    const modelOdds = leg.odds;
+    const bookImplied = 1 / Math.max(sportsbetOdds, 1.01);
     const selection = formatSportsbetSelection(line, leg);
-    const vsModel = valueScore(leg.probability, sportsbetOdds);
+
+    // If the book is much longer than Bounce, trust the book more —
+    // inflated model form (e.g. fake marks) should not keep ~75% confidence.
+    const stretch = sportsbetOdds / Math.max(modelOdds, 1.01);
+    let probability = leg.probability;
+    let confidence = leg.confidence;
+    const factors = [...leg.factors];
+
+    if (stretch >= 1.75) {
+      const blend = Math.min(0.85, 0.35 + (stretch - 1.75) * 0.25);
+      probability = leg.probability * (1 - blend) + bookImplied * blend;
+      confidence = Math.min(confidence, confidenceFromFactors(probability, factors));
+      factors.push({
+        key: "model-book-gap",
+        label: "Model vs book",
+        impact: "negative",
+        detail: `${book.label} $${sportsbetOdds.toFixed(2)} is ${stretch.toFixed(1)}× Bounce model $${modelOdds.toFixed(2)} — probability pulled toward book`,
+        weight: -0.04,
+      });
+    }
+
+    const vsModel = valueScore(probability, sportsbetOdds);
 
     return {
       ...leg,
+      probability,
+      confidence,
       odds: sportsbetOdds,
-      modelOdds: leg.odds,
+      modelOdds,
       sportsbetOdds,
       sportsbetMarket: line.marketKey,
       sportsbetLink: line.link ?? board.eventLink,
@@ -537,18 +561,20 @@ export function applySportsbetPrices(
       sportsbetSelection: selection,
       valueScore: vsModel,
       factors: [
-        ...leg.factors,
+        ...factors,
         {
           key: "bookmaker",
           label: book.label,
           impact:
-            sportsbetOdds > (leg.modelOdds ?? leg.odds) * 1.05
-              ? "positive"
-              : sportsbetOdds < (leg.modelOdds ?? leg.odds) * 0.95
-                ? "negative"
-                : "neutral",
-          detail: `Live ${book.label} ${selection} @ $${sportsbetOdds.toFixed(2)} (model ~$${(leg.modelOdds ?? leg.odds).toFixed(2)}, implied ${(impliedProb * 100).toFixed(0)}%)`,
-          weight: 0,
+            stretch >= 1.75
+              ? "negative"
+              : sportsbetOdds > modelOdds * 1.05
+                ? "positive"
+                : sportsbetOdds < modelOdds * 0.95
+                  ? "negative"
+                  : "neutral",
+          detail: `Live ${book.label} ${selection} @ $${sportsbetOdds.toFixed(2)} (model ~$${modelOdds.toFixed(2)}, book implied ${(bookImplied * 100).toFixed(0)}%)`,
+          weight: stretch >= 1.75 ? -0.02 : 0,
         },
       ],
     };
