@@ -106,9 +106,10 @@ function statForMarket(
 
 /**
  * Live/auto player prop settlement from ESPN box score.
+ * - Scratched / unused emergency (no involvement) → void (SGM refunds)
  * - Threshold reached → won immediately (even in-play)
  * - Game finished and under threshold → lost
- * - Still in play and under → pending with live actual
+ * - Still in play and under → pending with live actual / bench warning
  */
 function settlePlayerFromBox(
   leg: SavedLegSnapshot,
@@ -119,20 +120,67 @@ function settlePlayerFromBox(
   }
   if (!game.players?.length) return null;
 
+  const finished = game.espnCompleted || game.complete >= 100;
+  const lateInGame =
+    finished ||
+    game.complete >= 50 ||
+    /q3|q4|third|fourth|3rd|4th|half.?time|final/i.test(
+      game.espnStatusText ?? "",
+    );
+
   const line = findPlayerLine(game.players, leg.playerName);
   if (!line) {
-    // At FT with a full box and no player row → treat as 0 / missed
-    if (game.espnCompleted || game.complete >= 100) {
+    // Missing from a populated box at FT → scratched / not named → void
+    if (finished && game.players.length >= 30) {
       return {
         legId: leg.id,
-        outcome: "lost",
+        outcome: "void",
         actual: 0,
         settledAt: new Date().toISOString(),
         settledBy: "auto",
-        note: `${leg.playerName} not found in FT box score`,
+        note: `${leg.playerName} not in box score — treated as scratched (SGM void)`,
+      };
+    }
+    if (lateInGame && game.players.length >= 30) {
+      return {
+        legId: leg.id,
+        outcome: "pending",
+        actual: 0,
+        settledBy: "auto",
+        note: `${leg.playerName} not on live sheet yet — possible scratch`,
       };
     }
     return null;
+  }
+
+  // Unused emergency / never took the field (all counting stats zero)
+  if (line.didNotPlay) {
+    if (finished) {
+      return {
+        legId: leg.id,
+        outcome: "void",
+        actual: 0,
+        settledAt: new Date().toISOString(),
+        settledBy: "auto",
+        note: `${leg.playerName} recorded no involvement — unused/DNP (SGM void)`,
+      };
+    }
+    if (lateInGame) {
+      return {
+        legId: leg.id,
+        outcome: "pending",
+        actual: 0,
+        settledBy: "auto",
+        note: `${leg.playerName}: still 0 involvement — likely benched/emergency`,
+      };
+    }
+    return {
+      legId: leg.id,
+      outcome: "pending",
+      actual: 0,
+      settledBy: "auto",
+      note: `Live ${leg.playerName}: 0 / ${leg.threshold}+`,
+    };
   }
 
   const actual = statForMarket(line, leg.market);
@@ -149,7 +197,7 @@ function settlePlayerFromBox(
     };
   }
 
-  if (game.espnCompleted || game.complete >= 100) {
+  if (finished) {
     return {
       legId: leg.id,
       outcome: "lost",
@@ -160,13 +208,17 @@ function settlePlayerFromBox(
     };
   }
 
-  // Still alive — keep pending but store live progress
+  // Low-involvement warning (proxy for limited minutes — ESPN has no TOG %)
+  const lowMinutes =
+    lateInGame && line.involvement > 0 && line.involvement <= 4;
   return {
     legId: leg.id,
     outcome: "pending",
     actual,
     settledBy: "auto",
-    note: `Live ${leg.playerName}: ${actual} / ${leg.threshold}+`,
+    note: lowMinutes
+      ? `Live ${leg.playerName}: ${actual}/${leg.threshold}+ · low involvement (${line.involvement}) — likely limited minutes`
+      : `Live ${leg.playerName}: ${actual} / ${leg.threshold}+`,
   };
 }
 
@@ -197,8 +249,13 @@ export function autoSettleFromGame(
   const updates: SavedLegResult[] = [];
   for (const leg of item.legs) {
     const existing = item.legResults.find((r) => r.legId === leg.id);
-    // Never reopen a locked won/lost
-    if (existing && (existing.outcome === "won" || existing.outcome === "lost")) {
+    // Never reopen a locked won/lost/void
+    if (
+      existing &&
+      (existing.outcome === "won" ||
+        existing.outcome === "lost" ||
+        existing.outcome === "void")
+    ) {
       continue;
     }
 

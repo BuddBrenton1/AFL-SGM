@@ -10,6 +10,15 @@ export interface EspnPlayerLine {
   goals: number;
   tackles: number;
   marks: number;
+  kicks: number;
+  handballs: number;
+  hitouts: number;
+  active: boolean;
+  starter: boolean;
+  /** Proxy for took the field — any meaningful counting stat. */
+  involvement: number;
+  /** True when the player looks unused (emergency / DNP). */
+  didNotPlay: boolean;
 }
 
 export interface EspnMatchBox {
@@ -127,6 +136,8 @@ type EspnSummary = {
       statistics: Array<{
         labels: string[];
         athletes: Array<{
+          active?: boolean;
+          starter?: boolean;
           athlete: { displayName: string };
           stats: string[];
         }>;
@@ -215,15 +226,35 @@ export async function fetchEspnMatchBox(
     const iG = idx("G");
     const iT = idx("T");
     const iM = idx("M");
+    const iK = idx("K");
+    const iH = idx("H");
+    const iHO = idx("HO");
     for (const row of group.athletes ?? []) {
       const st = row.stats ?? [];
+      const disposals = iD >= 0 ? num(st[iD]) : 0;
+      const goals = iG >= 0 ? num(st[iG]) : 0;
+      const tackles = iT >= 0 ? num(st[iT]) : 0;
+      const marks = iM >= 0 ? num(st[iM]) : 0;
+      const kicks = iK >= 0 ? num(st[iK]) : 0;
+      const handballs = iH >= 0 ? num(st[iH]) : 0;
+      const hitouts = iHO >= 0 ? num(st[iHO]) : 0;
+      const involvement =
+        disposals + goals + tackles + marks + kicks + handballs + hitouts;
       players.push({
         name: row.athlete.displayName,
         team,
-        disposals: iD >= 0 ? num(st[iD]) : 0,
-        goals: iG >= 0 ? num(st[iG]) : 0,
-        tackles: iT >= 0 ? num(st[iT]) : 0,
-        marks: iM >= 0 ? num(st[iM]) : 0,
+        disposals,
+        goals,
+        tackles,
+        marks,
+        kicks,
+        handballs,
+        hitouts,
+        active: row.active !== false,
+        starter: !!row.starter,
+        involvement,
+        // Unused emergencies often appear on the sheet with all zeros.
+        didNotPlay: involvement === 0,
       });
     }
   }

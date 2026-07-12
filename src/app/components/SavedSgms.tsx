@@ -20,6 +20,8 @@ function outcomeTone(o: MultiOutcome) {
       return "bg-[var(--orange)] text-[#111]";
     case "lost":
       return "bg-[#3a2420] text-[#ffb4a0]";
+    case "void":
+      return "bg-[#2a2a3a] text-[#b8c0ff]";
     case "needs_stats":
       return "bg-[var(--flood-soft)] text-[var(--flood)]";
     case "open":
@@ -35,6 +37,8 @@ function outcomeLabel(o: MultiOutcome) {
       return "Won";
     case "lost":
       return "Lost";
+    case "void":
+      return "Void";
     case "needs_stats":
       return "Settling…";
     case "open":
@@ -45,8 +49,9 @@ function outcomeLabel(o: MultiOutcome) {
 }
 
 function legTone(outcome: string) {
-  if (outcome === "won") return "text-[var(--turf)]";
-  if (outcome === "lost") return "text-[var(--leather)]";
+  if (outcome === "won") return "text-[var(--orange)]";
+  if (outcome === "lost") return "text-[#ffb4a0]";
+  if (outcome === "void") return "text-[#b8c0ff]";
   return "text-[var(--muted)]";
 }
 
@@ -70,7 +75,9 @@ export function SavedSgmsSection() {
       const next: SavedSgm[] = [];
       for (const item of list) {
         if (
-          (item.multiOutcome === "won" || item.multiOutcome === "lost") &&
+          (item.multiOutcome === "won" ||
+            item.multiOutcome === "lost" ||
+            item.multiOutcome === "void") &&
           item.gameStatus.complete >= 100
         ) {
           next.push(item);
@@ -119,7 +126,10 @@ export function SavedSgmsSection() {
 
     const id = window.setInterval(() => {
       const open = itemsRef.current.some(
-        (i) => i.multiOutcome !== "won" && i.multiOutcome !== "lost",
+        (i) =>
+          i.multiOutcome !== "won" &&
+          i.multiOutcome !== "lost" &&
+          i.multiOutcome !== "void",
       );
       if (open) void refreshResults(itemsRef.current);
     }, POLL_MS);
@@ -129,8 +139,12 @@ export function SavedSgmsSection() {
 
   const openCount = useMemo(
     () =>
-      items.filter((i) => i.multiOutcome !== "won" && i.multiOutcome !== "lost")
-        .length,
+      items.filter(
+        (i) =>
+          i.multiOutcome !== "won" &&
+          i.multiOutcome !== "lost" &&
+          i.multiOutcome !== "void",
+      ).length,
     [items],
   );
 
@@ -154,8 +168,9 @@ export function SavedSgmsSection() {
             Saved SGMs
           </h2>
           <p className="text-sm text-[var(--muted)]">
-            Tracks live. Player props settle automatically from the match box
-            score — no input needed.
+            Tracks live. Props settle from the box score. Scratched / unused
+            players void the SGM (Sportsbet-style). Limited minutes are flagged
+            when involvement stays very low.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -197,6 +212,7 @@ export function SavedSgmsSection() {
           {items.map((item) => {
             const hits = item.legResults.filter((r) => r.outcome === "won").length;
             const misses = item.legResults.filter((r) => r.outcome === "lost").length;
+            const voids = item.legResults.filter((r) => r.outcome === "void").length;
             const pending = item.legResults.filter((r) => r.outcome === "pending").length;
 
             return (
@@ -237,7 +253,8 @@ export function SavedSgmsSection() {
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-[var(--muted)]">
-                      Legs {hits} hit · {misses} miss · {pending} live
+                      Legs {hits} hit · {misses} miss · {voids} void · {pending}{" "}
+                      live
                     </p>
                   </div>
                   <div className="text-right">
@@ -278,39 +295,63 @@ export function SavedSgmsSection() {
                     return (
                       <li
                         key={leg.id}
-                        className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-2 text-sm last:border-0"
+                        className="border-b border-[var(--line)] pb-2 text-sm last:border-0"
                       >
-                        <span className="font-medium text-[var(--ink)]">
-                          <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
-                          {leg.label}
-                          {result.outcome === "won" && (
-                            <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111]">
-                              Hit
-                            </span>
-                          )}
-                          {result.outcome === "lost" && (
-                            <span className="ml-2 bg-[#3a2420] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#ffb4a0]">
-                              Miss
-                            </span>
-                          )}
-                          {result.outcome === "pending" && result.actual != null && (
-                            <span className="ml-2 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--orange)]">
-                              Live {result.actual}
-                              {leg.threshold != null ? `/${leg.threshold}+` : ""}
-                            </span>
-                          )}
-                        </span>
-                        <span className={`font-semibold ${legTone(result.outcome)}`}>
-                          {formatOdds(leg.sportsbetOdds ?? leg.odds)}
-                          {result.actual != null &&
-                            result.outcome !== "pending" &&
-                            ` · ${result.actual}`}
-                        </span>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium text-[var(--ink)]">
+                            <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
+                            {leg.label}
+                            {result.outcome === "won" && (
+                              <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111]">
+                                Hit
+                              </span>
+                            )}
+                            {result.outcome === "lost" && (
+                              <span className="ml-2 bg-[#3a2420] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#ffb4a0]">
+                                Miss
+                              </span>
+                            )}
+                            {result.outcome === "void" && (
+                              <span className="ml-2 bg-[#2a2a3a] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#b8c0ff]">
+                                Void
+                              </span>
+                            )}
+                            {result.outcome === "pending" &&
+                              result.actual != null &&
+                              /benched|emergency|scratch|limited minutes|involvement/i.test(
+                                result.note ?? "",
+                              ) && (
+                                <span className="ml-2 bg-[#2a2a3a] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#b8c0ff]">
+                                  Watch
+                                </span>
+                              )}
+                            {result.outcome === "pending" && result.actual != null && (
+                              <span className="ml-2 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--orange)]">
+                                Live {result.actual}
+                                {leg.threshold != null ? `/${leg.threshold}+` : ""}
+                              </span>
+                            )}
+                          </span>
+                          <span className={`font-semibold ${legTone(result.outcome)}`}>
+                            {formatOdds(leg.sportsbetOdds ?? leg.odds)}
+                            {result.outcome === "void"
+                              ? " · void"
+                              : result.actual != null &&
+                                  result.outcome !== "pending"
+                                ? ` · ${result.actual}`
+                                : ""}
+                          </span>
+                        </div>
+                        {result.note && (
+                          <p className="mt-1 text-[11px] text-[var(--muted)]">
+                            {result.note}
+                          </p>
+                        )}
                       </li>
                     );
-                  })}
-                </ol>
-              </article>
+                })}
+              </ol>
+            </article>
             );
           })}
         </div>

@@ -1,7 +1,13 @@
 import type { MarketType, SgmMulti, TeamId } from "./types";
 
 export type LegOutcome = "pending" | "won" | "lost" | "void";
-export type MultiOutcome = "pending" | "open" | "won" | "lost" | "needs_stats";
+export type MultiOutcome =
+  | "pending"
+  | "open"
+  | "won"
+  | "lost"
+  | "void"
+  | "needs_stats";
 
 export interface SavedLegSnapshot {
   id: string;
@@ -152,12 +158,11 @@ export function isPlayerMarket(market: MarketType): boolean {
 
 export function deriveMultiOutcome(item: SavedSgm): MultiOutcome {
   const outcomes = item.legResults.map((r) => r.outcome);
+  // Sportsbet SGM rule: any voided player prop voids the whole multi
+  if (outcomes.some((o) => o === "void")) return "void";
   if (outcomes.some((o) => o === "lost")) return "lost";
-  if (outcomes.every((o) => o === "won" || o === "void")) {
-    return outcomes.some((o) => o === "won") ? "won" : "pending";
-  }
+  if (outcomes.every((o) => o === "won")) return "won";
   if (item.gameStatus.complete >= 100 && outcomes.some((o) => o === "pending")) {
-    // Waiting on box-score feed to finish settling remaining props
     return "needs_stats";
   }
   if (item.gameStatus.complete > 0 || item.gameStatus.espnStatusText) return "open";
