@@ -56,9 +56,9 @@ function formatMatchDate(date: string) {
 }
 
 function confidenceTone(c: number) {
-  if (c >= 0.62) return "text-[var(--turf-deep)] bg-[var(--mist-deep)]";
-  if (c >= 0.48) return "text-[#7a5a10] bg-[var(--flood-soft)]";
-  return "text-[#8a3418] bg-[#ffd5c4]";
+  if (c >= 0.62) return "text-[#111] bg-[var(--orange)]";
+  if (c >= 0.48) return "text-[var(--orange)] bg-[var(--flood-soft)]";
+  return "text-[#ffb4a0] bg-[#3a2420]";
 }
 
 export default function HomePage() {
@@ -190,134 +190,118 @@ export default function HomePage() {
       <div className="pointer-events-none absolute inset-0 oval-glow" />
       <div className="pointer-events-none absolute inset-0 turf-grid opacity-60" />
 
-      <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 md:px-8">
-        <div className="flex items-baseline gap-2">
-          <span
-            className="font-[family-name:var(--font-teko)] text-4xl tracking-wide text-[var(--turf)] md:text-5xl"
-            style={{ fontWeight: 700 }}
-          >
-            BOUNCE
-          </span>
-          <span className="hidden text-sm text-[var(--muted)] sm:inline">
-            AFL SGM Scanner
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <div
-            className={`hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold sm:flex ${
-              sportsbetStatus?.configured
-                ? "bg-[var(--mist-deep)] text-[var(--turf-deep)]"
-                : "bg-[var(--flood-soft)] text-[#7a5a10]"
-            }`}
-            title={sportsbetStatus?.message}
-          >
+      <header className="relative z-10 border-b border-[var(--line)]">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 md:px-8">
+          <div className="flex items-baseline gap-3">
             <span
-              className={`h-2 w-2 rounded-full ${
-                sportsbetStatus?.connected
-                  ? "bg-[var(--turf)]"
-                  : sportsbetStatus?.configured
-                    ? "bg-[var(--flood)]"
-                    : "bg-[var(--leather)]"
-              }`}
-            />
-            {book.label}{" "}
-            {sportsbetStatus?.connected
-              ? "live"
-              : sportsbetStatus?.configured
-                ? "keyed"
-                : "offline"}
+              className="font-[family-name:var(--font-teko)] text-4xl tracking-wide text-[var(--ink)] md:text-5xl"
+              style={{ fontWeight: 700 }}
+            >
+              BOUNCE
+            </span>
+            <span className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--orange)] sm:inline">
+              AFL SGM
+            </span>
           </div>
-            <a
-              href="#saved"
-              className="hidden rounded-full border border-[var(--line)] bg-white/50 px-4 py-2 text-sm font-medium text-[var(--turf)] backdrop-blur sm:inline"
-            >
-              Saved SGMs
+          <nav className="flex items-center gap-5 md:gap-7">
+            <a href="#fixtures" className="nav-link hidden sm:inline">
+              Fixtures
             </a>
-            <a
-              href="#scanner"
-              className="rounded-full bg-[var(--turf)] px-4 py-2 text-sm font-medium text-[var(--paper)] transition hover:bg-[var(--turf-deep)]"
-            >
-              Start scan
+            <a href="#scanner" className="nav-link hidden sm:inline">
+              Scanner
             </a>
+            <a href="#saved" className="nav-link">
+              Saved
+            </a>
+            <div
+              className="hidden items-center gap-2 border border-[var(--line)] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-strong)] md:flex"
+              title={sportsbetStatus?.message}
+            >
+              <span
+                className={`h-1.5 w-1.5 ${
+                  sportsbetStatus?.connected
+                    ? "bg-[var(--orange)]"
+                    : sportsbetStatus?.configured
+                      ? "bg-[var(--flood)]"
+                      : "bg-[var(--stone)]"
+                }`}
+              />
+              {book.label}{" "}
+              {sportsbetStatus?.connected
+                ? "live"
+                : sportsbetStatus?.configured
+                  ? "keyed"
+                  : "off"}
+            </div>
+          </nav>
         </div>
       </header>
 
-      <section className="relative z-10 mx-auto grid max-w-7xl gap-10 px-5 pb-16 pt-6 md:grid-cols-[1.15fr_0.85fr] md:px-8 md:pt-10">
+      <section className="relative z-10 mx-auto grid max-w-7xl gap-10 px-5 pb-14 pt-10 md:grid-cols-[1.2fr_0.8fr] md:px-8 md:pt-14">
         <div>
-          <p className="animate-rise mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--leather)]">
+          <p className="animate-rise mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-[var(--orange)]">
             Same game · deeper cut
           </p>
           <h1
-            className="animate-rise brand-stroke font-[family-name:var(--font-teko)] text-[4.4rem] leading-[0.88] text-[var(--turf-deep)] md:text-[7rem]"
+            className="animate-rise font-[family-name:var(--font-teko)] text-[4.6rem] leading-[0.86] text-[var(--ink)] md:text-[7.2rem]"
             style={{ fontWeight: 600 }}
           >
-            BOUNCE
+            BOUN<span className="text-[var(--orange)]">CE</span>
           </h1>
-          <p className="animate-rise-delay mt-5 max-w-xl text-lg text-[var(--muted)] md:text-xl">
+          <p className="animate-rise-delay mt-5 max-w-xl text-base text-[var(--muted-strong)] md:text-lg">
             Deep-scan every AFL fixture for Same Game Multis — form, ins/outs,
             weather, ladder and venue baked into every leg.
           </p>
           <div className="animate-rise-delay-2 mt-8 flex flex-wrap gap-3">
-            <a
-              href="#scanner"
-              className="rounded-full bg-[var(--leather)] px-6 py-3 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(228,87,46,0.32)] transition hover:translate-y-[-1px] hover:bg-[var(--leather-soft)]"
-            >
+            <a href="#scanner" className="btn-primary">
               Build my multi
             </a>
-            <a
-              href="#fixtures"
-              className="rounded-full border border-[var(--line)] bg-white/50 px-6 py-3 text-sm font-semibold text-[var(--turf)] backdrop-blur"
-            >
+            <a href="#fixtures" className="btn-ghost">
               View fixtures
             </a>
           </div>
         </div>
 
-        <div className="animate-rise-delay relative min-h-[280px] overflow-hidden rounded-[2px]">
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(145deg, rgba(10,79,66,0.94), rgba(15,122,99,0.78) 55%, rgba(228,87,46,0.35)), url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22800%22 height=%22600%22 viewBox=%220 0 800 600%22%3E%3Cellipse cx=%22400%22 cy=%22310%22 rx=%22340%22 ry=%22200%22 fill=%22none%22 stroke=%22%23ffc857%22 stroke-width=%223%22 opacity=%220.55%22/%3E%3Cellipse cx=%22400%22 cy=%22310%22 rx=%2280%22 ry=%2248%22 fill=%22none%22 stroke=%22%23ffc857%22 stroke-width=%222%22 opacity=%220.7%22/%3E%3Cpath d=%22M60 310 H740 M400 110 V510%22 stroke=%22%23ffc857%22 stroke-width=%222%22 opacity=%220.35%22/%3E%3C/svg%3E') center/cover",
-            }}
-          />
-          <div className="relative flex h-full flex-col justify-between p-6 text-[var(--paper)] md:p-8">
+        <div className="animate-rise-delay relative min-h-[260px] overflow-hidden border border-[var(--line)] bg-[var(--bg-raised)]">
+          <div className="hero-ring" />
+          <div className="hero-ring-2" />
+          <div className="relative flex h-full flex-col justify-between p-6 md:p-8">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[var(--flood)]">
+              <p className="text-xs uppercase tracking-[0.22em] text-[var(--orange)]">
                 Live season feed
               </p>
               <p
-                className="mt-2 font-[family-name:var(--font-teko)] text-5xl"
+                className="mt-2 font-[family-name:var(--font-teko)] text-5xl text-[var(--ink)]"
                 style={{ fontWeight: 600 }}
               >
                 Round {fixtures[0]?.round ?? "—"}
               </p>
-              <p className="mt-1 text-sm text-white/70">
+              <p className="mt-1 text-sm text-[var(--muted)]">
                 Squiggle fixtures + ladder · modelled player markets
               </p>
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
-              <div>
-                <p className="font-[family-name:var(--font-teko)] text-3xl text-[var(--flood)]">
+              <div className="border border-[var(--line)] bg-black/20 p-3">
+                <p className="font-[family-name:var(--font-teko)] text-3xl text-[var(--orange)]">
                   {fixtures.length || "—"}
                 </p>
-                <p className="text-[11px] uppercase tracking-wider text-white/60">
+                <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
                   Games
                 </p>
               </div>
-              <div>
-                <p className="font-[family-name:var(--font-teko)] text-3xl text-[var(--flood)]">
+              <div className="border border-[var(--line)] bg-black/20 p-3">
+                <p className="font-[family-name:var(--font-teko)] text-3xl text-[var(--orange)]">
                   7
                 </p>
-                <p className="text-[11px] uppercase tracking-wider text-white/60">
+                <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
                   Factors
                 </p>
               </div>
-              <div>
-                <p className="font-[family-name:var(--font-teko)] text-3xl text-[var(--flood)]">
+              <div className="border border-[var(--line)] bg-black/20 p-3">
+                <p className="font-[family-name:var(--font-teko)] text-3xl text-[var(--orange)]">
                   SGM
                 </p>
-                <p className="text-[11px] uppercase tracking-wider text-white/60">
+                <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
                   Focus
                 </p>
               </div>
@@ -359,8 +343,8 @@ export default function HomePage() {
                   onClick={() => setBookmaker(b.id)}
                   className={`px-3 py-2 text-sm font-semibold transition ${
                     bookmaker === b.id
-                      ? "bg-[var(--turf)] text-white"
-                      : "bg-[var(--mist)] text-[var(--turf)] hover:bg-[var(--mist)]/80"
+                      ? "bg-[var(--orange)] text-[#111]"
+                      : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
                   }`}
                 >
                   {b.label}
@@ -372,11 +356,11 @@ export default function HomePage() {
           <div
             className={`mt-5 border px-4 py-3 text-sm ${
               sportsbetStatus?.configured
-                ? "border-[var(--turf)]/25 bg-[var(--mist)] text-[var(--turf-deep)]"
-                : "border-[var(--flood)]/50 bg-[var(--paper-warm)] text-[#7a5a10]"
+                ? "border-[var(--orange)]/30 bg-black/25 text-[var(--muted-strong)]"
+                : "border-[var(--orange)]/40 bg-[var(--paper-warm)] text-[var(--flood)]"
             }`}
           >
-            <p className="font-semibold">
+            <p className="font-semibold text-[var(--ink)]">
               {book.label}{" "}
               {sportsbetStatus?.connected
                 ? "· live prices"
@@ -390,9 +374,9 @@ export default function HomePage() {
             </p>
             {!sportsbetStatus?.configured && (
               <p className="mt-2 text-xs">
-                Copy <code className="bg-white/70 px-1">.env.example</code> →{" "}
-                <code className="bg-white/70 px-1">.env.local</code>, set{" "}
-                <code className="bg-white/70 px-1">ODDS_API_KEY</code>, restart.
+                Copy <code className="bg-black/40 px-1 text-[var(--orange)]">.env.example</code> →{" "}
+                <code className="bg-black/40 px-1 text-[var(--orange)]">.env.local</code>, set{" "}
+                <code className="bg-black/40 px-1 text-[var(--orange)]">ODDS_API_KEY</code>, restart.
               </p>
             )}
             {sportsbetStatus?.remainingRequests != null && (
@@ -406,10 +390,10 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setMode("legs")}
-              className={`px-4 py-2 text-sm font-semibold transition ${
+              className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition ${
                 mode === "legs"
-                  ? "bg-[var(--turf)] text-white"
-                  : "bg-[var(--mist)] text-[var(--turf)]"
+                  ? "bg-[var(--orange)] text-[#111]"
+                  : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
               }`}
             >
               By legs
@@ -417,10 +401,10 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setMode("odds")}
-              className={`px-4 py-2 text-sm font-semibold transition ${
+              className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition ${
                 mode === "odds"
-                  ? "bg-[var(--turf)] text-white"
-                  : "bg-[var(--mist)] text-[var(--turf)]"
+                  ? "bg-[var(--orange)] text-[#111]"
+                  : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
               }`}
             >
               By target odds
@@ -467,7 +451,7 @@ export default function HomePage() {
                       step={1}
                       value={targetOdds}
                       onChange={(e) => setTargetOdds(Number(e.target.value))}
-                      className="w-full border border-[var(--line)] bg-white px-4 py-3 text-lg font-semibold text-[var(--ink)] outline-none focus:border-[var(--turf)]"
+                      className="w-full border border-[var(--line)] bg-[var(--bg-raised)] px-4 py-3 text-lg font-semibold text-[var(--ink)] outline-none focus:border-[var(--orange)]"
                     />
                     <div className="flex gap-2">
                       {[5, 10, 25, 50].map((v) => (
@@ -475,7 +459,7 @@ export default function HomePage() {
                           key={v}
                           type="button"
                           onClick={() => setTargetOdds(v)}
-                          className="bg-[var(--mist)] px-3 py-2 text-sm font-semibold text-[var(--turf)]"
+                          className="border border-[var(--line)] px-3 py-2 text-sm font-semibold text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
                         >
                           ${v}
                         </button>
@@ -515,8 +499,8 @@ export default function HomePage() {
                         onClick={() => setMaxSingleLegPrice(v)}
                         className={`px-2.5 py-1 text-xs font-semibold ${
                           Math.abs(maxSingleLegPrice - v) < 0.001
-                            ? "bg-[var(--turf)] text-white"
-                            : "bg-[var(--mist)] text-[var(--turf)]"
+                            ? "bg-[var(--orange)] text-[#111]"
+                            : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
                         }`}
                       >
                         ${v.toFixed(2)}
@@ -535,7 +519,7 @@ export default function HomePage() {
                 type="button"
                 onClick={runScan}
                 disabled={scanning || isPending || !fixtures.length}
-                className="relative overflow-hidden bg-[var(--leather)] px-6 py-4 text-left text-white transition enabled:hover:bg-[#b35020] disabled:opacity-60"
+                className="relative overflow-hidden bg-[var(--orange)] px-6 py-4 text-left text-[#111] transition enabled:hover:bg-[var(--orange-hot)] disabled:opacity-60"
               >
                 <span
                   className="font-[family-name:var(--font-teko)] text-3xl leading-none"
@@ -543,7 +527,7 @@ export default function HomePage() {
                 >
                   {scanning || isPending ? "Scanning fixtures…" : "Run deep scan"}
                 </span>
-                <p className="mt-1 text-xs text-white/80">
+                <p className="mt-1 text-xs text-black/70">
                   Form · weather · lists · ladder · venue
                 </p>
                 {(scanning || isPending) && (
@@ -593,8 +577,8 @@ export default function HomePage() {
                     onClick={() => setMinConfidencePct(v)}
                     className={`px-2.5 py-1 text-xs font-semibold ${
                       minConfidencePct === v
-                        ? "bg-[var(--turf)] text-white"
-                        : "bg-[var(--mist)] text-[var(--turf)]"
+                        ? "bg-[var(--orange)] text-[#111]"
+                        : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
                     }`}
                   >
                     {v === 0 ? "Any" : `${v}%+`}
@@ -603,7 +587,7 @@ export default function HomePage() {
               </div>
             </label>
 
-            <label className="mt-5 flex cursor-pointer items-start gap-3 border border-[var(--line)] bg-[var(--mist)]/50 p-4">
+            <label className="mt-5 flex cursor-pointer items-start gap-3 border border-[var(--line)] bg-black/20 p-4">
               <input
                 type="checkbox"
                 className="mt-1 h-4 w-4 accent-[var(--turf)]"
@@ -657,7 +641,7 @@ export default function HomePage() {
         </div>
 
         {loadError && (
-          <p className="border border-[var(--leather)]/25 bg-[#fff1ea] p-4 text-sm text-[var(--leather)]">
+          <p className="border border-[var(--orange)]/30 bg-[var(--paper-warm)] p-4 text-sm text-[var(--flood)]">
             {loadError}
           </p>
         )}
@@ -671,7 +655,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => toggleGame(g.id)}
                 className={`fixture-card border p-3.5 text-left ${
-                  on ? "is-on" : "border-transparent bg-white/45 hover:bg-white/75"
+                  on ? "is-on" : "hover:border-[var(--orange)]/40"
                 }`}
                 style={{ animationDelay: `${i * 40}ms` }}
               >
@@ -698,7 +682,7 @@ export default function HomePage() {
                     </p>
                   </div>
                   <span
-                    className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 ${
+                    className={`mt-0.5 h-4 w-4 shrink-0 border-2 ${
                       on
                         ? "border-[var(--turf)] bg-[var(--flood)]"
                         : "border-[var(--stone)]"
@@ -707,7 +691,7 @@ export default function HomePage() {
                 </div>
 
                 {g.prediction && (
-                  <div className="mt-2.5 border border-[var(--line)] bg-[var(--mist)]/70 p-2">
+                  <div className="mt-2.5 border border-[var(--line)] bg-black/25 p-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--muted)]">
                         Win %
@@ -720,8 +704,8 @@ export default function HomePage() {
                       <div
                         className={`p-1.5 ${
                           g.prediction.favourite === "home"
-                            ? "bg-[var(--turf)] text-[var(--paper)]"
-                            : "bg-white/80 text-[var(--ink)]"
+                            ? "bg-[var(--orange)] text-[#111]"
+                            : "bg-[var(--bg-hover)] text-[var(--ink)]"
                         }`}
                       >
                         <p className="truncate text-[9px] uppercase tracking-wide opacity-80">
@@ -737,8 +721,8 @@ export default function HomePage() {
                       <div
                         className={`p-1.5 ${
                           g.prediction.favourite === "away"
-                            ? "bg-[var(--turf)] text-[var(--paper)]"
-                            : "bg-white/80 text-[var(--ink)]"
+                            ? "bg-[var(--orange)] text-[#111]"
+                            : "bg-[var(--bg-hover)] text-[var(--ink)]"
                         }`}
                       >
                         <p className="truncate text-[9px] uppercase tracking-wide opacity-80">
@@ -752,7 +736,7 @@ export default function HomePage() {
                         </p>
                       </div>
                     </div>
-                    <div className="mt-1.5 h-1 overflow-hidden bg-white/80">
+                    <div className="mt-1.5 h-1 overflow-hidden bg-black/40">
                       <div
                         className="h-full bg-[var(--leather)]"
                         style={{
@@ -764,10 +748,10 @@ export default function HomePage() {
                 )}
 
                 <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-                  <span className="bg-[var(--mist)] px-1.5 py-0.5 text-[var(--turf-deep)]">
+                  <span className="bg-black/30 px-1.5 py-0.5 text-[var(--orange)]">
                     {g.weather.condition} · {g.weather.tempC}°C
                   </span>
-                  <span className="bg-[var(--sky)]/70 px-1.5 py-0.5 text-[var(--muted)]">
+                  <span className="bg-black/30 px-1.5 py-0.5 text-[var(--muted)]">
                     proj {g.expectedTotal}
                   </span>
                 </div>
@@ -820,7 +804,7 @@ export default function HomePage() {
               {result.multis.map((m, idx) => (
                 <article
                   key={m.id}
-                  className="animate-rise border border-[var(--line)] bg-white/85 p-5 shadow-[0_14px_40px_var(--shadow)] backdrop-blur md:p-6"
+                  className="animate-rise border border-[var(--line)] bg-[var(--bg-panel)] p-5 md:p-6"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
@@ -849,7 +833,7 @@ export default function HomePage() {
                           {(m.confidence * 100).toFixed(0)}% confidence
                         </span>
                         {m.sportsbetCoverage > 0 && (
-                          <span className="inline-block bg-[var(--turf-deep)] px-2 py-1 text-xs font-semibold text-[var(--flood)]">
+                          <span className="inline-block bg-[var(--orange)] px-2 py-1 text-xs font-semibold text-[#111]">
                             {resultBook.shortLabel}{" "}
                             {Math.round(m.sportsbetCoverage * 100)}%
                             {m.sportsbetCombinedOdds != null
@@ -882,8 +866,8 @@ export default function HomePage() {
                           }}
                           className={`px-3 py-1.5 text-xs font-semibold transition ${
                             savedIds.has(m.id) || saveFlash === m.id
-                              ? "bg-[var(--turf)] text-white"
-                              : "border border-[var(--turf)] text-[var(--turf)] hover:bg-[var(--mist)]"
+                              ? "bg-[var(--orange)] text-[#111]"
+                              : "border border-[var(--orange)] text-[var(--orange)] hover:bg-[var(--flood-soft)]"
                           }`}
                         >
                           {savedIds.has(m.id) || saveFlash === m.id
@@ -904,7 +888,7 @@ export default function HomePage() {
                           <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
                           {leg.label}
                           {leg.sportsbetOdds != null && (
-                            <span className="ml-2 bg-[var(--turf-deep)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--flood)]">
+                            <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#111]">
                               {resultBook.shortLabel}
                               {leg.sportsbetSelection
                                 ? ` · ${leg.sportsbetSelection}`
@@ -948,7 +932,7 @@ export default function HomePage() {
                     </summary>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       {m.legs.map((leg) => (
-                        <div key={leg.id} className="bg-[var(--mist)]/70 p-3">
+                        <div key={leg.id} className="bg-black/25 p-3">
                           <p className="text-sm font-semibold text-[var(--ink)]">
                             {leg.shortLabel}
                           </p>
@@ -979,7 +963,7 @@ export default function HomePage() {
             </div>
 
             {result.multis.length === 0 && (
-              <div className="mt-4 space-y-2 border border-[var(--line)] bg-[var(--mist)]/60 p-4 text-sm text-[var(--muted)]">
+              <div className="mt-4 space-y-2 border border-[var(--line)] bg-black/25 p-4 text-sm text-[var(--muted)]">
                 <p className="font-semibold text-[var(--ink)]">No multis found</p>
                 <p>
                   {result.target.sportsbetOnly
@@ -1011,7 +995,7 @@ export default function HomePage() {
 
       <SavedSgmsSection />
 
-      <footer className="relative z-10 border-t border-[var(--line)] bg-[var(--turf-deep)] px-5 py-8 text-[var(--paper)] md:px-8">
+      <footer className="relative z-10 border-t border-[var(--line)] bg-black px-5 py-8 text-[var(--ink)] md:px-8">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <p
             className="font-[family-name:var(--font-teko)] text-3xl"
@@ -1019,7 +1003,7 @@ export default function HomePage() {
           >
             BOUNCE
           </p>
-          <p className="text-sm text-white/60">
+          <p className="text-sm text-[var(--muted)]">
             AFL Same Game Multi scanner · live ladder & fixtures
           </p>
         </div>

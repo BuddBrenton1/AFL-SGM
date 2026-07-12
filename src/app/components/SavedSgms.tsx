@@ -17,13 +17,13 @@ const POLL_MS = 45_000;
 function outcomeTone(o: MultiOutcome) {
   switch (o) {
     case "won":
-      return "bg-[var(--mist-deep)] text-[var(--turf-deep)]";
+      return "bg-[var(--orange)] text-[#111]";
     case "lost":
-      return "bg-[#ffd5c4] text-[#8a3418]";
+      return "bg-[#3a2420] text-[#ffb4a0]";
     case "needs_stats":
-      return "bg-[var(--flood-soft)] text-[#7a5a10]";
+      return "bg-[var(--flood-soft)] text-[var(--flood)]";
     case "open":
-      return "bg-[var(--sky)] text-[var(--turf-deep)]";
+      return "bg-black/30 text-[var(--orange)]";
     default:
       return "bg-[var(--mist)] text-[var(--muted)]";
   }
@@ -164,7 +164,7 @@ export function SavedSgmsSection() {
               type="button"
               onClick={() => void refreshResults(items)}
               disabled={checking}
-              className="rounded-full border border-[var(--line)] bg-white/70 px-4 py-2 text-sm font-semibold text-[var(--turf)] disabled:opacity-60"
+              className="border border-[var(--line)] bg-[var(--bg-panel)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--ink)] hover:border-[var(--orange)] hover:text-[var(--orange)] disabled:opacity-60"
             >
               {checking ? "Updating…" : "Refresh now"}
             </button>
@@ -188,7 +188,7 @@ export function SavedSgmsSection() {
       </div>
 
       {items.length === 0 ? (
-        <p className="border border-[var(--line)] bg-white/50 p-5 text-sm text-[var(--muted)]">
+        <p className="border border-[var(--line)] bg-[var(--bg-panel)] p-5 text-sm text-[var(--muted)]">
           No saved multis yet. Hit <strong>Save SGM</strong> on a scan result to
           track it here.
         </p>
@@ -202,7 +202,7 @@ export function SavedSgmsSection() {
             return (
               <article
                 key={item.id}
-                className="border border-[var(--line)] bg-white/80 p-5 backdrop-blur md:p-6"
+                className="border border-[var(--line)] bg-[var(--bg-panel)] p-5 md:p-6"
               >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
@@ -284,17 +284,17 @@ export function SavedSgmsSection() {
                           <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
                           {leg.label}
                           {result.outcome === "won" && (
-                            <span className="ml-2 bg-[var(--mist-deep)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--turf-deep)]">
+                            <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111]">
                               Hit
                             </span>
                           )}
                           {result.outcome === "lost" && (
-                            <span className="ml-2 bg-[#ffd5c4] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#8a3418]">
+                            <span className="ml-2 bg-[#3a2420] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#ffb4a0]">
                               Miss
                             </span>
                           )}
                           {result.outcome === "pending" && result.actual != null && (
-                            <span className="ml-2 bg-[var(--sky)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--turf-deep)]">
+                            <span className="ml-2 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--orange)]">
                               Live {result.actual}
                               {leg.threshold != null ? `/${leg.threshold}+` : ""}
                             </span>
