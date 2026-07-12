@@ -16,6 +16,7 @@ import type {
   ScanResult,
 } from "./types";
 import { generateLegsForGame } from "./engine/legs";
+import { predictMatch } from "./engine/predict";
 import { deepScanGame } from "./engine/scanner";
 import { getWeatherForFixture } from "./weather";
 
@@ -51,7 +52,7 @@ export function enrichGame(
     (homeLadder.percentage + awayLadder.percentage - 200) * 0.15 +
     (blowoutRisk > 0.55 ? 6 : 0);
 
-  return {
+  const enriched: EnrichedGame = {
     ...game,
     homeLadder,
     awayLadder,
@@ -63,7 +64,17 @@ export function enrichGame(
     homeAdvantage,
     expectedTotal,
     blowoutRisk,
+    prediction: {
+      homeWinPct: 0.5,
+      awayWinPct: 0.5,
+      predictedMargin: 0,
+      favourite: "toss-up",
+      summary: "",
+      factors: [],
+    },
   };
+  enriched.prediction = predictMatch(enriched);
+  return enriched;
 }
 
 export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {

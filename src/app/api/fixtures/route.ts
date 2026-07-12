@@ -26,6 +26,14 @@ export async function GET() {
         awayInsOuts: g.awayInsOuts,
         expectedTotal: Math.round(g.expectedTotal),
         blowoutRisk: g.blowoutRisk,
+        prediction: {
+          homeWinPct: g.prediction.homeWinPct,
+          awayWinPct: g.prediction.awayWinPct,
+          predictedMargin: g.prediction.predictedMargin,
+          favourite: g.prediction.favourite,
+          summary: g.prediction.summary,
+          factors: g.prediction.factors,
+        },
       })),
     });
   } catch (err) {

@@ -128,6 +128,14 @@ export interface EnrichedGame extends FixtureGame {
   homeAdvantage: number;
   expectedTotal: number;
   blowoutRisk: number;
+  prediction: {
+    homeWinPct: number;
+    awayWinPct: number;
+    predictedMargin: number;
+    favourite: "home" | "away" | "toss-up";
+    summary: string;
+    factors: FactorSignal[];
+  };
 }
 
 export interface CandidateLeg {

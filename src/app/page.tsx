@@ -24,6 +24,14 @@ interface FixtureCard {
   homeInsOuts: { ins: string[]; outs: string[]; notes: string[] };
   awayInsOuts: { ins: string[]; outs: string[]; notes: string[] };
   expectedTotal: number;
+  prediction?: {
+    homeWinPct: number;
+    awayWinPct: number;
+    predictedMargin: number;
+    favourite: "home" | "away" | "toss-up";
+    summary: string;
+    factors: { key: string; label: string; impact: string; detail: string }[];
+  };
 }
 
 type Mode = "legs" | "odds";
@@ -596,7 +604,7 @@ export default function HomePage() {
                 style={{ animationDelay: `${i * 40}ms` }}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
                       {g.roundName} · {formatMatchDate(g.date)}
                     </p>
@@ -620,16 +628,72 @@ export default function HomePage() {
                     }`}
                   />
                 </div>
+
+                {g.prediction && (
+                  <div className="mt-3 border border-[var(--line)] bg-[var(--mist)]/60 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+                        Bounce win prediction
+                      </p>
+                      <p className="text-[11px] font-medium text-[var(--turf)]">
+                        {g.prediction.summary}
+                      </p>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <div
+                        className={`p-2 ${
+                          g.prediction.favourite === "home"
+                            ? "bg-[var(--turf)] text-[var(--paper)]"
+                            : "bg-white/70 text-[var(--ink)]"
+                        }`}
+                      >
+                        <p className="truncate text-[10px] uppercase tracking-wide opacity-80">
+                          {g.homeTeam}
+                        </p>
+                        <p
+                          className="font-[family-name:var(--font-teko)] text-3xl leading-none"
+                          style={{ fontWeight: 600 }}
+                        >
+                          {(g.prediction.homeWinPct * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <div
+                        className={`p-2 ${
+                          g.prediction.favourite === "away"
+                            ? "bg-[var(--turf)] text-[var(--paper)]"
+                            : "bg-white/70 text-[var(--ink)]"
+                        }`}
+                      >
+                        <p className="truncate text-[10px] uppercase tracking-wide opacity-80">
+                          {g.awayTeam}
+                        </p>
+                        <p
+                          className="font-[family-name:var(--font-teko)] text-3xl leading-none"
+                          style={{ fontWeight: 600 }}
+                        >
+                          {(g.prediction.awayWinPct * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden bg-white/80">
+                      <div
+                        className="h-full bg-[var(--leather)]"
+                        style={{
+                          width: `${Math.round(g.prediction.homeWinPct * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="mt-2 text-[10px] text-[var(--muted)]">
+                      Uses tip, ladder, venue, weather, lists & player form
+                    </p>
+                  </div>
+                )}
+
                 <p className="mt-3 text-xs text-[var(--muted)]">{g.weather.summary}</p>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
                   <span className="bg-[var(--mist)] px-2 py-1 text-[var(--turf)]">
                     {g.weather.condition} · {g.weather.tempC}°C · {g.weather.windKmh}km/h
                   </span>
-                  {g.tipHomeWinProb != null && (
-                    <span className="bg-[var(--mist)] px-2 py-1 text-[var(--turf)]">
-                      Home win {(g.tipHomeWinProb * 100).toFixed(0)}%
-                    </span>
-                  )}
                 </div>
               </button>
             );
