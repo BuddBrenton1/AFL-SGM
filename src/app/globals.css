@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+:root {
+  --turf: #0c3b2e;
+  --turf-deep: #06251c;
+  --leather: #c45c26;
+  --flood: #e6b84a;
+  --mist: #e7efe6;
+  --stone: #d4ddd2;
+  --ink: #14201b;
+  --muted: #5a6b62;
+  --paper: #f4f7f2;
+  --line: rgba(12, 59, 46, 0.12);
+  --glow: rgba(230, 184, 74, 0.35);
+  --background: var(--paper);
+  --foreground: var(--ink);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-display: var(--font-teko);
+  --font-sans: var(--font-sora);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sora), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+::selection {
+  background: var(--flood);
+  color: var(--turf-deep);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scanPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scaleX(0.4);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-rise {
+  animation: rise 0.7s ease-out both;
+}
+
+.animate-rise-delay {
+  animation: rise 0.8s ease-out 0.12s both;
+}
+
+.animate-rise-delay-2 {
+  animation: rise 0.9s ease-out 0.24s both;
+}
+
+.scan-bar {
+  animation: scanPulse 1.4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.shimmer {
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.45) 45%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.2s linear infinite;
+}
+
+.oval-glow {
+  background:
+    radial-gradient(ellipse 80% 55% at 70% 35%, rgba(230, 184, 74, 0.22), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 20% 70%, rgba(12, 59, 46, 0.18), transparent 50%),
+    linear-gradient(165deg, #eef4ec 0%, #d7e4d6 42%, #c5d6c8 100%);
+}
+
+.turf-grid {
+  background-image:
+    linear-gradient(rgba(12, 59, 46, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(12, 59, 46, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.brand-stroke {
+  -webkit-text-stroke: 1px rgba(12, 59, 46, 0.08);
+}

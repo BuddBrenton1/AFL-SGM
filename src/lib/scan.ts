@@ -1,0 +1,130 @@
+import { getInsOuts } from "./ins-outs";
+import { playersForTeam } from "./players";
+import { fetchStandings, fetchUpcomingGames } from "./squiggle";
+import { TEAMS } from "./teams";
+import type {
+  EnrichedGame,
+  FixtureGame,
+  LadderEntry,
+  ScanRequest,
+  ScanResult,
+} from "./types";
+import { generateLegsForGame } from "./engine/legs";
+import { deepScanGame } from "./engine/scanner";
+import { getWeatherForFixture } from "./weather";
+
+function fallbackLadder(teamId: FixtureGame["homeTeamId"], rank: number): LadderEntry {
+  return {
+    team: teamId,
+    name: TEAMS[teamId].name,
+    rank,
+    points: Math.max(0, 68 - rank * 4),
+    percentage: 100,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    played: 0,
+  };
+}
+
+export function enrichGame(
+  game: FixtureGame,
+  ladderByTeam: Map<string, LadderEntry>,
+): EnrichedGame {
+  const homeLadder =
+    ladderByTeam.get(game.homeTeamId) ?? fallbackLadder(game.homeTeamId, 9);
+  const awayLadder =
+    ladderByTeam.get(game.awayTeamId) ?? fallbackLadder(game.awayTeamId, 10);
+
+  const tip = game.tipHomeWinProb ?? 0.5;
+  const rankGap = awayLadder.rank - homeLadder.rank;
+  const homeAdvantage = 0.04 + (game.venue === TEAMS[game.homeTeamId].primaryVenue ? 0.03 : 0.01);
+  const blowoutRisk = Math.min(0.9, Math.abs(tip - 0.5) * 2 + Math.abs(rankGap) * 0.02);
+  const expectedTotal =
+    168 +
+    (homeLadder.percentage + awayLadder.percentage - 200) * 0.15 +
+    (blowoutRisk > 0.55 ? 6 : 0);
+
+  return {
+    ...game,
+    homeLadder,
+    awayLadder,
+    weather: getWeatherForFixture(game.venue, game.date, game.id),
+    homeInsOuts: getInsOuts(game.homeTeamId),
+    awayInsOuts: getInsOuts(game.awayTeamId),
+    homePlayers: playersForTeam(game.homeTeamId),
+    awayPlayers: playersForTeam(game.awayTeamId),
+    homeAdvantage,
+    expectedTotal,
+    blowoutRisk,
+  };
+}
+
+export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
+  const [games, standings] = await Promise.all([
+    fetchUpcomingGames(2026),
+    fetchStandings(2026),
+  ]);
+  const ladderByTeam = new Map(standings.map((s) => [s.team, s]));
+  return games.slice(0, 16).map((g) => enrichGame(g, ladderByTeam));
+}
+
+export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
+  const games = await loadEnrichedFixtures();
+  const selected = req.gameIds?.length
+    ? games.filter((g) => req.gameIds!.includes(g.id))
+    : games.slice(0, 10);
+
+  const mode = req.mode;
+  const maxResults = req.maxResults ?? 12;
+  const allMultis = [];
+  let candidatesEvaluated = 0;
+  let combinationsChecked = 0;
+  const scanNotes: string[] = [
+    "Live fixtures & ladder via Squiggle API",
+    "Leg probabilities blend season averages, last-5 form, home/away splits",
+    "Weather, ins/outs, ladder rank & venue advantage applied per leg",
+    "Same-game correlation haircut applied to stacked markets",
+  ];
+
+  for (const game of selected) {
+    const legs = generateLegsForGame(game);
+    const scanned = deepScanGame({
+      gameId: game.id,
+      matchup: `${game.homeTeam} vs ${game.awayTeam}`,
+      venue: game.venue,
+      round: game.round,
+      legs,
+      mode,
+      legCount: req.legCount,
+      targetOdds: req.targetOdds,
+      maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
+    });
+    candidatesEvaluated += scanned.candidatesEvaluated;
+    combinationsChecked += scanned.combinationsChecked;
+    allMultis.push(...scanned.multis);
+  }
+
+  const minConf = req.minConfidence ?? 0;
+  const multis = allMultis
+    .filter((m) => m.confidence >= minConf)
+    .sort((a, b) => b.edgeScore - a.edgeScore)
+    .slice(0, maxResults);
+
+  if (mode === "legs") {
+    scanNotes.push(`Target construction: ${req.legCount ?? 3}-leg same game multis`);
+  } else {
+    scanNotes.push(`Target price band around $${req.targetOdds ?? 10}`);
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    mode,
+    target: { legCount: req.legCount, targetOdds: req.targetOdds },
+    gamesScanned: selected.length,
+    candidatesEvaluated,
+    combinationsChecked,
+    multis,
+    scanNotes,
+  };
+}
