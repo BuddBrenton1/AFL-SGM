@@ -534,15 +534,18 @@ export function applySportsbetPrices(
     const factors = [...leg.factors];
 
     if (stretch >= 1.75) {
-      const blend = Math.min(0.85, 0.35 + (stretch - 1.75) * 0.25);
+      const blend = Math.min(0.55, 0.2 + (stretch - 1.75) * 0.15);
       probability = leg.probability * (1 - blend) + bookImplied * blend;
-      confidence = Math.min(confidence, confidenceFromFactors(probability, factors));
+      confidence = Math.min(
+        confidence,
+        confidenceFromFactors(probability, factors),
+      );
       factors.push({
         key: "model-book-gap",
         label: "Model vs book",
         impact: "negative",
-        detail: `${book.label} $${sportsbetOdds.toFixed(2)} is ${stretch.toFixed(1)}× Bounce model $${modelOdds.toFixed(2)} — probability pulled toward book`,
-        weight: -0.04,
+        detail: `${book.label} $${sportsbetOdds.toFixed(2)} is ${stretch.toFixed(1)}× Bounce model $${modelOdds.toFixed(2)} — probability nudged toward book`,
+        weight: -0.025,
       });
     }
 

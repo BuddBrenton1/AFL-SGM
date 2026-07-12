@@ -493,7 +493,22 @@ export function deepScanGame(opts: {
   // Target-price mode: short legs only (user max per-leg price), up to 25 legs
   if (mode === "odds" && opts.targetOdds) {
     const target = opts.targetOdds;
-    const shortLegs = sourceLegs.filter((l) => l.odds <= maxSingle + 1e-9);
+    let effectiveMax = maxSingle;
+    let shortLegs = sourceLegs.filter((l) => l.odds <= effectiveMax + 1e-9);
+
+    // Live book props are often longer than Bounce model shorts — relax the cap
+    // rather than returning an empty card when "prices only" is on.
+    if (shortLegs.length < Math.max(4, requested || 4)) {
+      for (const bump of [1.5, 1.65, 1.8, 2.0, 2.2, 2.5]) {
+        if (bump <= effectiveMax + 1e-9) continue;
+        const next = sourceLegs.filter((l) => l.odds <= bump + 1e-9);
+        if (next.length > shortLegs.length) {
+          shortLegs = next;
+          effectiveMax = bump;
+        }
+        if (shortLegs.length >= 8) break;
+      }
+    }
     const rankedShort = [...shortLegs].sort(
       (a, b) => legEdge(b) - legEdge(a) || a.odds - b.odds,
     );
@@ -503,7 +518,7 @@ export function deepScanGame(opts: {
     const { combos, checked } = buildTowardTargetPrice(
       pool,
       target,
-      maxSingle,
+      effectiveMax,
       maxResults,
     );
 
@@ -511,7 +526,7 @@ export function deepScanGame(opts: {
     const multis: SgmMulti[] = [];
 
     for (const combo of combos) {
-      if (combo.some((l) => l.odds > maxSingle + 1e-9)) continue;
+      if (combo.some((l) => l.odds > effectiveMax + 1e-9)) continue;
       if (hasConflicts(combo)) continue;
       multis.push(buildMulti(gameMeta, combo));
     }
@@ -521,14 +536,14 @@ export function deepScanGame(opts: {
       const { combos: fixed, checked: c } = enumerateCombos(pool, k, maxResults);
       combinationsChecked += c;
       for (const combo of fixed) {
-        if (combo.some((l) => l.odds > maxSingle + 1e-9)) continue;
+        if (combo.some((l) => l.odds > effectiveMax + 1e-9)) continue;
         if (hasConflicts(combo)) continue;
         multis.push(buildMulti(gameMeta, combo));
       }
     }
 
     const filtered = multis
-      .filter((m) => m.legs.every((l) => l.odds <= maxSingle + 1e-9))
+      .filter((m) => m.legs.every((l) => l.odds <= effectiveMax + 1e-9))
       .filter((m) => m.legs.length <= MAX_LEGS)
       .map((m) => ({
         multi: m,
@@ -571,7 +586,11 @@ export function deepScanGame(opts: {
       if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) continue;
       if (!m.rationale.some((r) => r.includes("max single"))) {
         m.rationale.push(
-          `Target-price rule: max ${MAX_LEGS} legs, each ≤ $${maxSingle.toFixed(2)}`,
+          `Target-price rule: max ${MAX_LEGS} legs, each ≤ $${effectiveMax.toFixed(2)}${
+            effectiveMax > maxSingle + 1e-9
+              ? ` (relaxed from $${maxSingle.toFixed(2)} for live prices)`
+              : ""
+          }`,
         );
       }
       selected.push(m);
@@ -582,10 +601,18 @@ export function deepScanGame(opts: {
   }
 
   // Fixed leg-count mode
-  const minOdds = requested >= 12 ? 1.08 : requested >= 8 ? 1.15 : 1.28;
-  const maxProb = requested >= 12 ? 0.96 : 0.88;
+  // Live book shorts often sit at $1.15–$1.25; don't wipe the pool at $1.28.
+  const minOdds = requested >= 12 ? 1.08 : requested >= 8 ? 1.12 : 1.15;
+  const maxProb = requested >= 12 ? 0.96 : 0.9;
 
-  const usable = sourceLegs.filter((l) => l.odds >= minOdds && l.probability <= maxProb);
+  const usable = sourceLegs.filter((l) => {
+    const gateOdds = l.modelOdds ?? l.odds;
+    // Accept if either model or live price clears the floor (keeps short SB favs + model legs)
+    return (
+      (l.odds >= minOdds || gateOdds >= minOdds) &&
+      l.probability <= maxProb
+    );
+  });
   const ranked = [...usable].sort((a, b) => {
     const spiceA = Math.min(Math.log(a.odds), 2.2) * 0.15;
     const spiceB = Math.min(Math.log(b.odds), 2.2) * 0.15;

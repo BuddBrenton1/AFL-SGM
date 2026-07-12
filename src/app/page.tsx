@@ -67,7 +67,7 @@ export default function HomePage() {
   const [targetOdds, setTargetOdds] = useState(12);
   const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.35);
   const [minConfidencePct, setMinConfidencePct] = useState(0);
-  const [sportsbetOnly, setSportsbetOnly] = useState(true);
+  const [sportsbetOnly, setSportsbetOnly] = useState(false);
   const [bookmaker, setBookmaker] = useState<BookmakerId>(DEFAULT_BOOKMAKER);
   const [selectedGames, setSelectedGames] = useState<number[]>([]);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -605,9 +605,9 @@ export default function HomePage() {
                   {book.label} prices only
                 </span>
                 <span className="mt-1 block text-xs text-[var(--muted)]">
-                  Hide model-only markets. Every leg must have a live {book.label}{" "}
-                  price ({book.shortLabel} badge). Turn off to include Bounce
-                  estimates where {book.label} has no matching line.
+                  Prefer live {book.label} prices ({book.shortLabel} badge). If props
+                  are sparse, Bounce still fills with model markets so the scan
+                  never comes back empty.
                 </span>
               </span>
             </label>
@@ -944,9 +944,14 @@ export default function HomePage() {
             </div>
 
             {result.multis.length === 0 && (
-              <p className="mt-4 text-sm text-[var(--muted)]">
-                No multis matched that target. Try a wider odds band or fewer legs.
-              </p>
+              <div className="mt-4 space-y-2 border border-[var(--line)] bg-[var(--mist)]/60 p-4 text-sm text-[var(--muted)]">
+                <p className="font-semibold text-[var(--ink)]">No multis found</p>
+                <p>
+                  {result.target.sportsbetOnly
+                    ? `No live ${resultBook.label} prices matched enough legs for this slate. Turn off “${resultBook.label} prices only”, raise max price per leg, or lower the confidence floor.`
+                    : "Try a wider odds band, fewer legs, lower confidence, or select more fixtures."}
+                </p>
+              </div>
             )}
 
             <div className="mt-8 border-t border-[var(--line)] pt-4">
