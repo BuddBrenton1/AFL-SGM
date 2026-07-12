@@ -483,7 +483,7 @@ export default function HomePage() {
                 <span className="text-xs text-[var(--muted)]">
                   {minConfidencePct === 0
                     ? "No floor — show all ranked multis"
-                    : `Only keep multis at ${minConfidencePct}%+ confidence`}
+                    : `Only keep multis whose legs average ${minConfidencePct}%+ hit confidence`}
                 </span>
               </div>
               <div className="mt-2 flex items-center gap-4">
@@ -702,6 +702,7 @@ export default function HomePage() {
                       <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
                         <span
                           className={`inline-block px-2 py-1 text-xs font-semibold ${confidenceTone(m.confidence)}`}
+                          title="Average estimated hit-rate of the legs, minus a correlation haircut"
                         >
                           {(m.confidence * 100).toFixed(0)}% confidence
                         </span>

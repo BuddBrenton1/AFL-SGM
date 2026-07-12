@@ -1,5 +1,5 @@
 import type { CandidateLeg, ScanMode, SgmMulti } from "../types";
-import { combineIndependentProb, combineOdds, legEdge } from "./odds";
+import { clamp, combineIndependentProb, combineOdds, legEdge } from "./odds";
 
 export const MIN_LEGS = 2;
 export const MAX_LEGS = 25;
@@ -94,8 +94,14 @@ function buildMulti(
   const sportsbetCoverage = sbPrices.length / Math.max(legs.length, 1);
   const sportsbetCombinedOdds =
     sbPrices.length === legs.length ? combineOdds(sbPrices) : null;
-  const confidence =
-    legs.reduce((a, l) => a + l.confidence, 0) / legs.length - penalty * 0.5;
+  // Multi confidence = average leg hit-confidence, minus correlation haircut
+  const avgLegConfidence =
+    legs.reduce((a, l) => a + l.confidence, 0) / Math.max(legs.length, 1);
+  const confidence = clamp(
+    avgLegConfidence - penalty * 0.35,
+    0.05,
+    0.97,
+  );
 
   const rationale = [
     ...legs.slice(0, 3).flatMap((l) =>

@@ -39,16 +39,19 @@ export function formatOdds(odds: number): string {
   return `$${odds.toFixed(odds >= 10 ? 1 : 2)}`;
 }
 
+/**
+ * Leg confidence ≈ estimated chance the leg hits, nudged by supporting/drag factors.
+ * This is what the UI % badge is based on (averaged across the multi).
+ */
 export function confidenceFromFactors(
   baseProb: number,
   factors: FactorSignal[],
 ): number {
   const shift = factors.reduce((acc, f) => acc + f.weight, 0);
-  const adjusted = clamp(baseProb + shift, 0.05, 0.96);
-  // Confidence rewards stable high-probability legs with supportive factors
   const support = factors.filter((f) => f.impact === "positive").length;
   const drag = factors.filter((f) => f.impact === "negative").length;
-  return clamp(adjusted * 0.7 + support * 0.04 - drag * 0.03, 0.05, 0.98);
+  // Stay close to true hit probability so a 70% floor is meaningful
+  return clamp(baseProb + shift + support * 0.015 - drag * 0.02, 0.05, 0.97);
 }
 
 export function valueScore(probability: number, odds: number): number {
