@@ -36,6 +36,16 @@ export async function POST(request: Request) {
       }
     }
 
+    if (body.minConfidence != null) {
+      const minConfidence = Number(body.minConfidence);
+      if (!Number.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 0.95) {
+        return NextResponse.json(
+          { error: "Minimum confidence must be between 0 and 0.95" },
+          { status: 400 },
+        );
+      }
+    }
+
     const result = await runDeepScan({
       mode,
       legCount: body.legCount ? Number(body.legCount) : 3,
@@ -45,7 +55,8 @@ export async function POST(request: Request) {
         : undefined,
       gameIds: body.gameIds,
       maxResults: body.maxResults ? Number(body.maxResults) : 12,
-      minConfidence: body.minConfidence ? Number(body.minConfidence) : 0,
+      minConfidence:
+        body.minConfidence != null ? Number(body.minConfidence) : 0,
     });
 
     return NextResponse.json(result);

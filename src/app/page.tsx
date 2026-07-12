@@ -52,6 +52,7 @@ export default function HomePage() {
   const [legCount, setLegCount] = useState(3);
   const [targetOdds, setTargetOdds] = useState(12);
   const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.35);
+  const [minConfidencePct, setMinConfidencePct] = useState(0);
   const [selectedGames, setSelectedGames] = useState<number[]>([]);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -110,6 +111,7 @@ export default function HomePage() {
             legCount,
             targetOdds,
             maxSingleLegPrice: mode === "odds" ? maxSingleLegPrice : undefined,
+            minConfidence: minConfidencePct / 100,
             gameIds: selectedGames.length ? selectedGames : undefined,
             maxResults: 12,
           }),
@@ -469,6 +471,54 @@ export default function HomePage() {
               )}
             </div>
           </div>
+
+          <div className="mt-6 border-t border-[var(--line)] pt-5">
+            <label className="block">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                  Minimum confidence
+                </span>
+                <span className="text-xs text-[var(--muted)]">
+                  {minConfidencePct === 0
+                    ? "No floor — show all ranked multis"
+                    : `Only keep multis at ${minConfidencePct}%+ confidence`}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center gap-4">
+                <input
+                  type="range"
+                  min={0}
+                  max={80}
+                  step={5}
+                  value={minConfidencePct}
+                  onChange={(e) => setMinConfidencePct(Number(e.target.value))}
+                  className="w-full accent-[var(--leather)]"
+                />
+                <span
+                  className="min-w-[4.5rem] text-right font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
+                  style={{ fontWeight: 600 }}
+                >
+                  {minConfidencePct}%
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[0, 40, 50, 60, 70].map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setMinConfidencePct(v)}
+                    className={`px-2.5 py-1 text-xs font-semibold ${
+                      minConfidencePct === v
+                        ? "bg-[var(--turf)] text-white"
+                        : "bg-[var(--mist)] text-[var(--turf)]"
+                    }`}
+                  >
+                    {v === 0 ? "Any" : `${v}%+`}
+                  </button>
+                ))}
+              </div>
+            </label>
+          </div>
         </div>
       </section>
 
@@ -595,6 +645,11 @@ export default function HomePage() {
                   ? `${result.target.legCount} legs`
                   : `~$${result.target.targetOdds} · legs ≤ $${(result.target.maxSingleLegPrice ?? 1.35).toFixed(2)}`}
               </span>
+              {(result.target.minConfidence ?? 0) > 0 && (
+                <span>
+                  Confidence ≥ {Math.round((result.target.minConfidence ?? 0) * 100)}%
+                </span>
+              )}
             </div>
 
             <div className="grid gap-4">

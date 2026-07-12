@@ -202,6 +202,7 @@ export interface ScanResult {
     legCount?: number;
     targetOdds?: number;
     maxSingleLegPrice?: number;
+    minConfidence?: number;
   };
   gamesScanned: number;
   candidatesEvaluated: number;

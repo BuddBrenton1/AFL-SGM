@@ -133,7 +133,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     allMultis.push(...scanned.multis);
   }
 
-  const minConf = req.minConfidence ?? 0;
+  const minConf = Math.min(0.95, Math.max(0, req.minConfidence ?? 0));
   const multis = allMultis
     .filter((m) => m.confidence >= minConf)
     .sort((a, b) => b.edgeScore - a.edgeScore)
@@ -147,6 +147,11 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       `Target price band around $${req.targetOdds ?? 10} · max 25 legs · each leg ≤ $${legCap.toFixed(2)}`,
     );
   }
+  if (minConf > 0) {
+    scanNotes.push(
+      `Confidence floor: ${(minConf * 100).toFixed(0)}%+ (${multis.length} multis kept)`,
+    );
+  }
 
   return {
     generatedAt: new Date().toISOString(),
@@ -155,6 +160,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       legCount: req.legCount,
       targetOdds: req.targetOdds,
       maxSingleLegPrice: mode === "odds" ? legCap : undefined,
+      minConfidence: minConf,
     },
     gamesScanned: selected.length,
     candidatesEvaluated,
