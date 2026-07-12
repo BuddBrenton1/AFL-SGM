@@ -636,9 +636,9 @@ export default function HomePage() {
                   {book.label} prices only
                 </span>
                 <span className="mt-1 block text-xs text-[var(--muted)]">
-                  Prefer live {book.label} prices ({book.shortLabel} badge). If props
-                  are sparse, Bounce still fills with model markets so the scan
-                  never comes back empty.
+                  Only build multis where every leg has a live {book.label} price
+                  ({book.shortLabel} badge). Fixtures with sparse props are skipped —
+                  results may be empty.
                 </span>
               </span>
             </label>
@@ -1028,7 +1028,7 @@ export default function HomePage() {
                 <p className="font-semibold text-[var(--ink)]">No multis found</p>
                 <p>
                   {result.target.sportsbetOnly
-                    ? `No live ${resultBook.label} prices matched enough legs for this slate. Turn off “${resultBook.label} prices only”, raise max price per leg, or lower the confidence floor.`
+                    ? `No fully live ${resultBook.label} SGMs for this slate. Turn off “${resultBook.label} prices only”, pick fewer legs, raise max price per leg, or try another round.`
                     : "Try a wider odds band, fewer legs, lower confidence, or select more fixtures."}
                 </p>
               </div>

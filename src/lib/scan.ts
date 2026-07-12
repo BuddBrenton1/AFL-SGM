@@ -133,7 +133,6 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
     const rawLegs = generateLegsForGame(game);
     let legs = applySportsbetPrices(rawLegs, board, bookmaker);
-    let requireBook = !!req.sportsbetOnly;
 
     if (req.sportsbetOnly) {
       if (!board) {
@@ -141,13 +140,13 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
         continue;
       }
       const priced = legs.filter((l) => l.sportsbetOdds != null);
-      if (priced.length < 2) {
+      const minLegsNeeded =
+        mode === "legs" ? Math.min(25, Math.max(2, req.legCount ?? 3)) : 2;
+      if (priced.length < minLegsNeeded) {
         gamesSkippedSparsePrices += 1;
-        // Prefer live prices, but don't blank the card when props are sparse
-        requireBook = false;
-      } else {
-        legs = priced;
+        continue;
       }
+      legs = priced;
     }
 
     const scanned = deepScanGame({
@@ -163,7 +162,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
       sportsbetLink: board?.eventLink,
       bookmakerLabel: book.label,
-      requireSportsbet: requireBook,
+      requireSportsbet: !!req.sportsbetOnly,
     });
     candidatesEvaluated += scanned.candidatesEvaluated;
     combinationsChecked += scanned.combinationsChecked;
@@ -175,53 +174,13 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     .filter((m) => m.confidence >= minConf)
     .sort((a, b) => b.edgeScore - a.edgeScore);
 
-  // Soft prefer fully-priced multis when bookie-only was requested, but never return empty
+  // Hard gate: bookie-only means every leg must carry a live price
   if (req.sportsbetOnly) {
-    const fullyPriced = multis.filter(
+    multis = multis.filter(
       (m) =>
         m.sportsbetCoverage >= 0.999 &&
         m.legs.every((l) => l.sportsbetOdds != null),
     );
-    if (fullyPriced.length > 0) {
-      multis = fullyPriced;
-    } else if (multis.length > 0) {
-      scanNotes.push(
-        `${book.label}-only had no fully priced SGMs — showing best Bounce builds (partial ${book.shortLabel} prices where matched)`,
-      );
-    }
-  }
-
-  // Absolute fallback: if bookie-only + filters wiped everything, rescan without the gate
-  if (multis.length === 0 && req.sportsbetOnly) {
-    scanNotes.push(
-      `${book.label}-only returned nothing for this slate — falling back to Bounce model markets`,
-    );
-    for (const game of selected) {
-      const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
-      const rawLegs = generateLegsForGame(game);
-      const legs = applySportsbetPrices(rawLegs, board, bookmaker);
-      const scanned = deepScanGame({
-        gameId: game.id,
-        matchup: `${game.homeTeam} vs ${game.awayTeam}`,
-        venue: game.venue,
-        round: game.round,
-        legs,
-        mode,
-        legCount: req.legCount,
-        targetOdds: req.targetOdds,
-        maxSingleLegPrice: req.maxSingleLegPrice,
-        maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
-        sportsbetLink: board?.eventLink,
-        bookmakerLabel: book.label,
-        requireSportsbet: false,
-      });
-      candidatesEvaluated += scanned.candidatesEvaluated;
-      combinationsChecked += scanned.combinationsChecked;
-      allMultis.push(...scanned.multis);
-    }
-    multis = allMultis
-      .filter((m) => m.confidence >= minConf)
-      .sort((a, b) => b.edgeScore - a.edgeScore);
   }
 
   multis = multis.slice(0, maxResults);
@@ -241,7 +200,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   }
   if (req.sportsbetOnly) {
     scanNotes.push(
-      `${book.label}-only preferred: every leg priced when ${book.shortLabel} props are available`,
+      `${book.label}-only: every leg must have a live ${book.shortLabel} price — no model fill-ins`,
     );
     if (gamesSkippedNoBoard > 0) {
       scanNotes.push(
@@ -250,7 +209,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     }
     if (gamesSkippedSparsePrices > 0) {
       scanNotes.push(
-        `${gamesSkippedSparsePrices} fixture${gamesSkippedSparsePrices === 1 ? "" : "s"} had sparse ${book.shortLabel} props — mixed in Bounce model legs`,
+        `Skipped ${gamesSkippedSparsePrices} fixture${gamesSkippedSparsePrices === 1 ? "" : "s"} with too few live ${book.shortLabel} props`,
       );
     }
   } else {
