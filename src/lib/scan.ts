@@ -132,24 +132,33 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
   for (const game of selected) {
     const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
-    let legs;
+    const rawLegs = generateLegsForGame(game);
+    let legs = applySportsbetPrices(rawLegs, board, bookmaker);
+    let requireBook = false;
 
     if (req.sportsbetOnly) {
       if (!board) {
         gamesSkippedNoBoard += 1;
-        continue;
+        // Still scan with model legs — Odds API often has no board yet
+      } else {
+        const boardLegs = legsFromSportsbetBoard(board, game, bookmaker);
+        const minLegsNeeded =
+          mode === "legs" ? Math.min(25, Math.max(2, req.legCount ?? 3)) : 2;
+        const livePriced = legs.filter((l) => l.sportsbetOdds != null);
+
+        if (boardLegs.length >= minLegsNeeded) {
+          // Enough live markets to build a full book-only multi
+          legs = boardLegs;
+          requireBook = true;
+        } else if (livePriced.length >= minLegsNeeded) {
+          legs = livePriced;
+          requireBook = true;
+        } else {
+          // AFL player props are often missing from Odds API — keep model fill-ins
+          gamesSkippedSparsePrices += 1;
+          requireBook = false;
+        }
       }
-      // Build from live board lines so every leg is book-priced
-      legs = legsFromSportsbetBoard(board, game, bookmaker);
-      const minLegsNeeded =
-        mode === "legs" ? Math.min(25, Math.max(2, req.legCount ?? 3)) : 2;
-      if (legs.length < minLegsNeeded) {
-        gamesSkippedSparsePrices += 1;
-        continue;
-      }
-    } else {
-      const rawLegs = generateLegsForGame(game);
-      legs = applySportsbetPrices(rawLegs, board, bookmaker);
     }
 
     const scanned = deepScanGame({
@@ -165,7 +174,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
       sportsbetLink: board?.eventLink,
       bookmakerLabel: book.label,
-      requireSportsbet: !!req.sportsbetOnly,
+      requireSportsbet: requireBook,
     });
     candidatesEvaluated += scanned.candidatesEvaluated;
     combinationsChecked += scanned.combinationsChecked;
@@ -177,13 +186,26 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     .filter((m) => m.confidence >= minConf)
     .sort((a, b) => b.edgeScore - a.edgeScore);
 
-  // Hard gate: bookie-only means every leg must carry a live price
+  // Prefer fully live-priced multis when requested, but never blank the card
   if (req.sportsbetOnly) {
-    multis = multis.filter(
+    const fullyPriced = multis.filter(
       (m) =>
         m.sportsbetCoverage >= 0.999 &&
         m.legs.every((l) => l.sportsbetOdds != null),
     );
+    if (fullyPriced.length > 0) {
+      multis = fullyPriced;
+    } else if (multis.length > 0) {
+      // Rank higher coverage first so SB badges bubble up
+      multis = [...multis].sort(
+        (a, b) =>
+          b.sportsbetCoverage - a.sportsbetCoverage ||
+          b.edgeScore - a.edgeScore,
+      );
+      scanNotes.push(
+        `${book.label} player props are sparse on Odds API right now — showing Bounce SGMs with live ${book.shortLabel} prices where matched`,
+      );
+    }
   }
 
   multis = multis.slice(0, maxResults);
@@ -203,16 +225,16 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   }
   if (req.sportsbetOnly) {
     scanNotes.push(
-      `${book.label}-only: building SGMs from live ${book.shortLabel} markets only — no model fill-ins`,
+      `${book.label} preferred: use live ${book.shortLabel} markets when Odds API has them; Bounce fills player props when the book feed is thin`,
     );
     if (gamesSkippedNoBoard > 0) {
       scanNotes.push(
-        `Skipped ${gamesSkippedNoBoard} fixture${gamesSkippedNoBoard === 1 ? "" : "s"} with no ${book.label} board`,
+        `${gamesSkippedNoBoard} fixture${gamesSkippedNoBoard === 1 ? "" : "s"} had no ${book.label} board on Odds API`,
       );
     }
     if (gamesSkippedSparsePrices > 0) {
       scanNotes.push(
-        `Skipped ${gamesSkippedSparsePrices} fixture${gamesSkippedSparsePrices === 1 ? "" : "s"} with too few live ${book.shortLabel} props`,
+        `${gamesSkippedSparsePrices} fixture${gamesSkippedSparsePrices === 1 ? "" : "s"} only had match markets (no player props) — mixed in Bounce legs`,
       );
     }
   } else {

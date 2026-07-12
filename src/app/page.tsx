@@ -633,11 +633,12 @@ export default function HomePage() {
               />
               <span>
                 <span className="block text-sm font-semibold text-[var(--ink)]">
-                  {book.label} prices only
+                  Prefer {book.label} prices
                 </span>
                 <span className="mt-1 block text-xs text-[var(--muted)]">
-                  Build multis only from live {book.label} markets ({book.shortLabel}
-                  badge on every leg). Fixtures with too few props are skipped.
+                  Rank live {book.label} prices first ({book.shortLabel} badge).
+                  Odds API often only has AFL match markets — Bounce still fills
+                  player props so the scan isn’t empty.
                 </span>
               </span>
             </label>
@@ -856,7 +857,7 @@ export default function HomePage() {
                 </span>
               )}
               {result.target.sportsbetOnly && (
-                <span>{resultBook.label} legs only</span>
+                <span>Prefer {resultBook.label} prices</span>
               )}
             </div>
 
@@ -1027,7 +1028,7 @@ export default function HomePage() {
                 <p className="font-semibold text-[var(--ink)]">No multis found</p>
                 <p>
                   {result.target.sportsbetOnly
-                    ? `Not enough live ${resultBook.label} markets on this slate for a full SGM. Try fewer legs, a higher max price per leg, more fixtures, or turn off “${resultBook.label} prices only”.`
+                    ? `No multis found even with Bounce fill-ins. Try fewer legs, a wider odds band, lower confidence, or more fixtures.`
                     : "Try a wider odds band, fewer legs, lower confidence, or select more fixtures."}
                 </p>
               </div>
