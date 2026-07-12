@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isBookmakerId } from "@/lib/bookmakers";
 import { runDeepScan } from "@/lib/scan";
 import type { ScanRequest } from "@/lib/types";
 
@@ -8,6 +9,16 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Partial<ScanRequest>;
     const mode = body.mode === "odds" ? "odds" : "legs";
+
+    if (body.bookmaker != null && !isBookmakerId(String(body.bookmaker))) {
+      return NextResponse.json(
+        {
+          error:
+            "Invalid platform. Choose Sportsbet, TAB, Neds, Ladbrokes, PointsBet, or Unibet.",
+        },
+        { status: 400 },
+      );
+    }
 
     if (mode === "legs") {
       const legCount = Number(body.legCount ?? 3);
@@ -58,6 +69,7 @@ export async function POST(request: Request) {
       minConfidence:
         body.minConfidence != null ? Number(body.minConfidence) : 0,
       sportsbetOnly: body.sportsbetOnly === true,
+      bookmaker: body.bookmaker ? String(body.bookmaker) : undefined,
     });
 
     return NextResponse.json(result);

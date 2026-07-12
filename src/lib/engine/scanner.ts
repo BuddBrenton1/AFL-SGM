@@ -83,6 +83,7 @@ function buildMulti(
     venue: string;
     round: number;
     sportsbetLink?: string;
+    bookmakerLabel?: string;
   },
   legs: CandidateLeg[],
 ): SgmMulti {
@@ -120,13 +121,14 @@ function buildMulti(
       `${legs.length}-leg build used beam search (full enumeration is too large)`,
     );
   }
+  const bookLabel = gameMeta.bookmakerLabel ?? "Book";
   if (sportsbetCombinedOdds != null) {
     rationale.push(
-      `Sportsbet leg product ${sportsbetCombinedOdds.toFixed(2)} (actual SGM price may differ with correlation)`,
+      `${bookLabel} leg product ${sportsbetCombinedOdds.toFixed(2)} (actual SGM price may differ with correlation)`,
     );
   } else if (sbPrices.length > 0) {
     rationale.push(
-      `Sportsbet matched ${sbPrices.length}/${legs.length} legs — incomplete book price`,
+      `${bookLabel} matched ${sbPrices.length}/${legs.length} legs — incomplete book price`,
     );
   }
 
@@ -461,6 +463,7 @@ export function deepScanGame(opts: {
   targetOdds?: number;
   maxResults?: number;
   sportsbetLink?: string;
+  bookmakerLabel?: string;
   /** Max decimal price per leg when mode is odds (default 1.35) */
   maxSingleLegPrice?: number;
   requireSportsbet?: boolean;
@@ -473,7 +476,7 @@ export function deepScanGame(opts: {
       ? Math.min(MAX_LEGS, Math.max(MIN_LEGS, opts.legCount ?? 3))
       : 0;
 
-  // When Sportsbet-only, drop model-only candidates up front
+  // When bookmaker-only, drop model-only candidates up front
   const sourceLegs = opts.requireSportsbet
     ? opts.legs.filter((l) => l.sportsbetOdds != null)
     : opts.legs;
@@ -484,6 +487,7 @@ export function deepScanGame(opts: {
     venue: opts.venue,
     round: opts.round,
     sportsbetLink: opts.sportsbetLink,
+    bookmakerLabel: opts.bookmakerLabel,
   };
 
   // Target-price mode: short legs only (user max per-leg price), up to 25 legs

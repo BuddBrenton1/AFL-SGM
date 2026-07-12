@@ -7,6 +7,7 @@ import {
   loadSportsbetBoard,
   lookupSportsbetBoard,
 } from "./sportsbet";
+import { getBookmaker } from "./bookmakers";
 import { TEAMS } from "./teams";
 import type {
   EnrichedGame,
@@ -92,8 +93,12 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     ? games.filter((g) => req.gameIds!.includes(g.id))
     : games.slice(0, 10);
 
+  const book = getBookmaker(req.bookmaker);
+  const bookmaker = book.id;
+
   const { byMatchup, status: sportsbetStatus } = await loadSportsbetBoard(
     selected.map((g) => ({ homeTeam: g.homeTeam, awayTeam: g.awayTeam })),
+    bookmaker,
   );
 
   const mode = req.mode;
@@ -111,21 +116,21 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   if (sportsbetStatus.configured && sportsbetStatus.connected) {
     scanNotes.push(sportsbetStatus.message);
     scanNotes.push(
-      "Sportsbet leg prices via The Odds API — SGM total is a product estimate (book may price correlation differently)",
+      `${book.label} leg prices via The Odds API — SGM total is a product estimate (book may price correlation differently)`,
     );
   } else if (sportsbetStatus.configured) {
     scanNotes.push(sportsbetStatus.message);
     if (sportsbetStatus.lastError) scanNotes.push(sportsbetStatus.lastError);
   } else {
     scanNotes.push(
-      "Sportsbet not linked — set ODDS_API_KEY for live Sportsbet prices (the-odds-api.com)",
+      `${book.label} not linked — set ODDS_API_KEY for live prices (the-odds-api.com)`,
     );
   }
 
   for (const game of selected) {
     const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
     const rawLegs = generateLegsForGame(game);
-    let legs = applySportsbetPrices(rawLegs, board);
+    let legs = applySportsbetPrices(rawLegs, board, bookmaker);
 
     if (req.sportsbetOnly) {
       if (!board) continue;
@@ -145,6 +150,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       maxSingleLegPrice: req.maxSingleLegPrice,
       maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
       sportsbetLink: board?.eventLink,
+      bookmakerLabel: book.label,
       requireSportsbet: !!req.sportsbetOnly,
     });
     candidatesEvaluated += scanned.candidatesEvaluated;
@@ -182,11 +188,11 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   }
   if (req.sportsbetOnly) {
     scanNotes.push(
-      "Sportsbet-only mode: every leg must have a live Sportsbet price (model-only markets hidden)",
+      `${book.label}-only mode: every leg must have a live ${book.label} price (model-only markets hidden)`,
     );
   } else {
     scanNotes.push(
-      "Model markets may appear without an SB badge when Sportsbet/Odds API has no matching line",
+      `Model markets may appear without a ${book.shortLabel} badge when ${book.label}/Odds API has no matching line`,
     );
   }
 
@@ -199,16 +205,24 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       maxSingleLegPrice: mode === "odds" ? legCap : undefined,
       minConfidence: minConf,
       sportsbetOnly: !!req.sportsbetOnly,
+      bookmaker: book.id,
+      bookmakerLabel: book.label,
+      bookmakerShort: book.shortLabel,
     },
     gamesScanned: selected.length,
     candidatesEvaluated,
     combinationsChecked,
     multis,
     scanNotes,
-    sportsbet: sportsbetStatus,
+    sportsbet: {
+      ...sportsbetStatus,
+      bookmakerId: book.id,
+      bookmakerLabel: book.label,
+      bookmakerShort: book.shortLabel,
+    },
   };
 }
 
-export function sportsbetStatusOnly() {
-  return getSportsbetConfigStatus();
+export function sportsbetStatusOnly(bookmakerId?: string) {
+  return getSportsbetConfigStatus(getBookmaker(bookmakerId).id);
 }

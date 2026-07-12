@@ -1,15 +1,22 @@
+import {
+  DEFAULT_BOOKMAKER,
+  getBookmaker,
+  type BookmakerId,
+} from "./bookmakers";
 import { resolveTeamId } from "./teams";
 import type { CandidateLeg, MarketType } from "./types";
 import { combineOdds, roundOdds, valueScore } from "./engine/odds";
 
 const BASE = "https://api.the-odds-api.com/v4";
 const SPORT = "aussierules_afl";
-const BOOKMAKER = "sportsbet";
 
 export interface SportsbetStatus {
   configured: boolean;
   connected: boolean;
   message: string;
+  bookmakerId?: BookmakerId;
+  bookmakerLabel?: string;
+  bookmakerShort?: string;
   remainingRequests?: number | null;
   lastError?: string;
 }
@@ -68,19 +75,27 @@ function getApiKey(): string | null {
   return key && key.length > 5 ? key : null;
 }
 
-export function getSportsbetConfigStatus(): SportsbetStatus {
+export function getSportsbetConfigStatus(
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
+): SportsbetStatus {
+  const book = getBookmaker(bookmakerId);
   if (!getApiKey()) {
     return {
       configured: false,
       connected: false,
-      message:
-        "Add ODDS_API_KEY to link live Sportsbet prices via The Odds API (free tier available).",
+      bookmakerId: book.id,
+      bookmakerLabel: book.label,
+      bookmakerShort: book.shortLabel,
+      message: `Add ODDS_API_KEY to link live ${book.label} prices via The Odds API (free tier available).`,
     };
   }
   return {
     configured: true,
     connected: false,
-    message: "Sportsbet key configured — prices load on scan.",
+    bookmakerId: book.id,
+    bookmakerLabel: book.label,
+    bookmakerShort: book.shortLabel,
+    message: `${book.label} key configured — prices load on scan.`,
   };
 }
 
@@ -217,8 +232,11 @@ async function oddsFetch(path: string): Promise<{
   return { data: await res.json(), remaining };
 }
 
-function extractSportsbet(event: OddsApiEvent): SportsbetEventOdds | null {
-  const book = event.bookmakers?.find((b) => b.key === BOOKMAKER);
+function extractSportsbet(
+  event: OddsApiEvent,
+  bookmakerKey: string,
+): SportsbetEventOdds | null {
+  const book = event.bookmakers?.find((b) => b.key === bookmakerKey);
   if (!book) return null;
 
   const lines: SportsbetPriceLine[] = [];
@@ -256,43 +274,52 @@ const PROP_MARKETS = [
   "player_marks_over",
 ].join(",");
 
-export async function fetchSportsbetFeaturedOdds(): Promise<{
+export async function fetchSportsbetFeaturedOdds(
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
+): Promise<{
   events: SportsbetEventOdds[];
   remaining: number | null;
 }> {
+  const book = getBookmaker(bookmakerId);
   const { data, remaining } = await oddsFetch(
-    `/sports/${SPORT}/odds?regions=au&bookmakers=${BOOKMAKER}&markets=${FEATURED_MARKETS}&oddsFormat=decimal`,
+    `/sports/${SPORT}/odds?regions=au&bookmakers=${book.apiKey}&markets=${FEATURED_MARKETS}&oddsFormat=decimal`,
   );
   const events = (data as OddsApiEvent[])
-    .map(extractSportsbet)
+    .map((e) => extractSportsbet(e, book.apiKey))
     .filter((e): e is SportsbetEventOdds => e !== null);
   return { events, remaining };
 }
 
 export async function fetchSportsbetEventProps(
   eventId: string,
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
 ): Promise<SportsbetEventOdds | null> {
+  const book = getBookmaker(bookmakerId);
   const { data } = await oddsFetch(
-    `/sports/${SPORT}/events/${eventId}/odds?regions=au&bookmakers=${BOOKMAKER}&markets=${PROP_MARKETS}&oddsFormat=decimal`,
+    `/sports/${SPORT}/events/${eventId}/odds?regions=au&bookmakers=${book.apiKey}&markets=${PROP_MARKETS}&oddsFormat=decimal`,
   );
-  return extractSportsbet(data as OddsApiEvent);
+  return extractSportsbet(data as OddsApiEvent, book.apiKey);
 }
 
-export async function loadSportsbetBoard(matchups: {
-  homeTeam: string;
-  awayTeam: string;
-}[]): Promise<{
+export async function loadSportsbetBoard(
+  matchups: {
+    homeTeam: string;
+    awayTeam: string;
+  }[],
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
+): Promise<{
   byMatchup: Map<string, SportsbetEventOdds>;
   status: SportsbetStatus;
 }> {
+  const book = getBookmaker(bookmakerId);
   const byMatchup = new Map<string, SportsbetEventOdds>();
-  const baseStatus = getSportsbetConfigStatus();
+  const baseStatus = getSportsbetConfigStatus(book.id);
   if (!baseStatus.configured) {
     return { byMatchup, status: baseStatus };
   }
 
   try {
-    const { events, remaining } = await fetchSportsbetFeaturedOdds();
+    const { events, remaining } = await fetchSportsbetFeaturedOdds(book.id);
 
     // Match fixtures and pull props for overlapping games (cap to save credits)
     const matched: SportsbetEventOdds[] = [];
@@ -307,7 +334,7 @@ export async function loadSportsbetBoard(matchups: {
     await Promise.all(
       limited.map(async (ev) => {
         try {
-          const props = await fetchSportsbetEventProps(ev.eventId);
+          const props = await fetchSportsbetEventProps(ev.eventId, book.id);
           if (props) {
             // merge featured + props lines
             const merged: SportsbetEventOdds = {
@@ -344,10 +371,13 @@ export async function loadSportsbetBoard(matchups: {
       status: {
         configured: true,
         connected: true,
+        bookmakerId: book.id,
+        bookmakerLabel: book.label,
+        bookmakerShort: book.shortLabel,
         message:
           byMatchup.size > 0
-            ? `Sportsbet prices linked for ${limited.length} fixture${limited.length === 1 ? "" : "s"}.`
-            : "Connected, but no Sportsbet markets matched this slate yet.",
+            ? `${book.label} prices linked for ${limited.length} fixture${limited.length === 1 ? "" : "s"}.`
+            : `Connected, but no ${book.label} markets matched this slate yet.`,
         remainingRequests: remaining,
       },
     };
@@ -357,7 +387,10 @@ export async function loadSportsbetBoard(matchups: {
       status: {
         configured: true,
         connected: false,
-        message: "Sportsbet link failed — using Bounce model odds.",
+        bookmakerId: book.id,
+        bookmakerLabel: book.label,
+        bookmakerShort: book.shortLabel,
+        message: `${book.label} link failed — using Bounce model odds.`,
         lastError: err instanceof Error ? err.message : "Unknown error",
       },
     };
@@ -479,8 +512,10 @@ function formatSportsbetSelection(line: SportsbetPriceLine, leg: CandidateLeg): 
 export function applySportsbetPrices(
   legs: CandidateLeg[],
   board: SportsbetEventOdds | undefined,
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
 ): CandidateLeg[] {
   if (!board) return legs;
+  const book = getBookmaker(bookmakerId);
 
   return legs.map((leg) => {
     const line = findSportsbetLine(board, leg);
@@ -504,15 +539,15 @@ export function applySportsbetPrices(
       factors: [
         ...leg.factors,
         {
-          key: "sportsbet",
-          label: "Sportsbet",
+          key: "bookmaker",
+          label: book.label,
           impact:
             sportsbetOdds > (leg.modelOdds ?? leg.odds) * 1.05
               ? "positive"
               : sportsbetOdds < (leg.modelOdds ?? leg.odds) * 0.95
                 ? "negative"
                 : "neutral",
-          detail: `Live Sportsbet ${selection} @ $${sportsbetOdds.toFixed(2)} (model ~$${(leg.modelOdds ?? leg.odds).toFixed(2)}, implied ${(impliedProb * 100).toFixed(0)}%)`,
+          detail: `Live ${book.label} ${selection} @ $${sportsbetOdds.toFixed(2)} (model ~$${(leg.modelOdds ?? leg.odds).toFixed(2)}, implied ${(impliedProb * 100).toFixed(0)}%)`,
           weight: 0,
         },
       ],

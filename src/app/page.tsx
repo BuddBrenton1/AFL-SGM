@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  BOOKMAKERS,
+  DEFAULT_BOOKMAKER,
+  getBookmaker,
+  type BookmakerId,
+} from "@/lib/bookmakers";
 import type { ScanResult } from "@/lib/types";
 import { formatOdds } from "@/lib/engine/odds";
 
@@ -62,6 +68,7 @@ export default function HomePage() {
   const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.35);
   const [minConfidencePct, setMinConfidencePct] = useState(0);
   const [sportsbetOnly, setSportsbetOnly] = useState(true);
+  const [bookmaker, setBookmaker] = useState<BookmakerId>(DEFAULT_BOOKMAKER);
   const [selectedGames, setSelectedGames] = useState<number[]>([]);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -71,8 +78,22 @@ export default function HomePage() {
     configured: boolean;
     connected: boolean;
     message: string;
+    bookmakerId?: string;
+    bookmakerLabel?: string;
+    bookmakerShort?: string;
     remainingRequests?: number | null;
   } | null>(null);
+
+  const book = useMemo(() => getBookmaker(bookmaker), [bookmaker]);
+  const resultBook = useMemo(
+    () =>
+      getBookmaker(
+        result?.target.bookmaker ??
+          result?.sportsbet?.bookmakerId ??
+          bookmaker,
+      ),
+    [result, bookmaker],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +101,7 @@ export default function HomePage() {
       try {
         const [fixRes, sbRes] = await Promise.all([
           fetch("/api/fixtures"),
-          fetch("/api/sportsbet"),
+          fetch(`/api/sportsbet?bookmaker=${encodeURIComponent(bookmaker)}`),
         ]);
         const data = await fixRes.json();
         const sb = await sbRes.json();
@@ -97,7 +118,27 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
+    // Initial fixture load only — bookmaker status refreshes below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const sbRes = await fetch(
+          `/api/sportsbet?bookmaker=${encodeURIComponent(bookmaker)}`,
+        );
+        const sb = await sbRes.json();
+        if (!cancelled) setSportsbetStatus(sb);
+      } catch {
+        /* keep prior status */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookmaker]);
 
   const selectedSet = useMemo(() => new Set(selectedGames), [selectedGames]);
 
@@ -122,6 +163,7 @@ export default function HomePage() {
             maxSingleLegPrice: mode === "odds" ? maxSingleLegPrice : undefined,
             minConfidence: minConfidencePct / 100,
             sportsbetOnly,
+            bookmaker,
             gameIds: selectedGames.length ? selectedGames : undefined,
             maxResults: 12,
           }),
@@ -174,7 +216,7 @@ export default function HomePage() {
                     : "bg-[var(--leather)]"
               }`}
             />
-            Sportsbet{" "}
+            {book.label}{" "}
             {sportsbetStatus?.connected
               ? "live"
               : sportsbetStatus?.configured
@@ -290,8 +332,30 @@ export default function HomePage() {
               <p className="max-w-2xl text-sm text-[var(--muted)]">
                 Choose leg count or a target price. Bounce enumerates same-game
                 combinations and ranks them by confidence, edge and correlation
-                risk — overlaying Sportsbet prices when linked.
+                risk — overlaying {book.label} prices when linked.
               </p>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+              What platform are you using?
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {BOOKMAKERS.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => setBookmaker(b.id)}
+                  className={`px-3 py-2 text-sm font-semibold transition ${
+                    bookmaker === b.id
+                      ? "bg-[var(--turf)] text-white"
+                      : "bg-[var(--mist)] text-[var(--turf)] hover:bg-[var(--mist)]/80"
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -303,7 +367,7 @@ export default function HomePage() {
             }`}
           >
             <p className="font-semibold">
-              Sportsbet{" "}
+              {book.label}{" "}
               {sportsbetStatus?.connected
                 ? "· live prices"
                 : sportsbetStatus?.configured
@@ -312,7 +376,7 @@ export default function HomePage() {
             </p>
             <p className="mt-1 text-xs opacity-90">
               {sportsbetStatus?.message ??
-                "Add ODDS_API_KEY from the-odds-api.com to pull live Sportsbet AFL prices."}
+                `Add ODDS_API_KEY from the-odds-api.com to pull live ${book.label} AFL prices.`}
             </p>
             {!sportsbetStatus?.configured && (
               <p className="mt-2 text-xs">
@@ -538,12 +602,12 @@ export default function HomePage() {
               />
               <span>
                 <span className="block text-sm font-semibold text-[var(--ink)]">
-                  Sportsbet prices only
+                  {book.label} prices only
                 </span>
                 <span className="mt-1 block text-xs text-[var(--muted)]">
-                  Hide model-only markets. Every leg must have a live Sportsbet
-                  price (SB badge). Turn off to include Bounce estimates where
-                  Sportsbet has no matching line.
+                  Hide model-only markets. Every leg must have a live {book.label}{" "}
+                  price ({book.shortLabel} badge). Turn off to include Bounce
+                  estimates where {book.label} has no matching line.
                 </span>
               </span>
             </label>
@@ -735,7 +799,9 @@ export default function HomePage() {
                   Confidence ≥ {Math.round((result.target.minConfidence ?? 0) * 100)}%
                 </span>
               )}
-              {result.target.sportsbetOnly && <span>Sportsbet legs only</span>}
+              {result.target.sportsbetOnly && (
+                <span>{resultBook.label} legs only</span>
+              )}
             </div>
 
             <div className="grid gap-4">
@@ -772,7 +838,8 @@ export default function HomePage() {
                         </span>
                         {m.sportsbetCoverage > 0 && (
                           <span className="inline-block bg-[#0c3b2e] px-2 py-1 text-xs font-semibold text-[#e6b84a]">
-                            SB {Math.round(m.sportsbetCoverage * 100)}%
+                            {resultBook.shortLabel}{" "}
+                            {Math.round(m.sportsbetCoverage * 100)}%
                             {m.sportsbetCombinedOdds != null
                               ? ` · ${formatOdds(m.sportsbetCombinedOdds)}`
                               : ""}
@@ -786,7 +853,7 @@ export default function HomePage() {
                           rel="noopener noreferrer"
                           className="mt-2 inline-block text-xs font-semibold text-[var(--leather)] underline"
                         >
-                          Open on Sportsbet
+                          Open on {resultBook.label}
                         </a>
                       )}
                     </div>
@@ -803,7 +870,7 @@ export default function HomePage() {
                           {leg.label}
                           {leg.sportsbetOdds != null && (
                             <span className="ml-2 bg-[#0c3b2e] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#e6b84a]">
-                              SB
+                              {resultBook.shortLabel}
                               {leg.sportsbetSelection
                                 ? ` · ${leg.sportsbetSelection}`
                                 : ""}
@@ -814,7 +881,7 @@ export default function HomePage() {
                           {leg.sportsbetOdds != null ? (
                             <>
                               <span className="font-semibold text-[var(--turf)]">
-                                SB {formatOdds(leg.sportsbetOdds)}
+                                {resultBook.shortLabel} {formatOdds(leg.sportsbetOdds)}
                               </span>
                               {leg.modelOdds != null && (
                                 <span className="ml-2 text-xs">
@@ -892,8 +959,9 @@ export default function HomePage() {
                 ))}
               </ul>
               <p className="mt-3 text-[11px] text-[var(--muted)]">
-                Sportsbet prices come from The Odds API when <code>ODDS_API_KEY</code> is set.
-                Combined SGM is a product of individual Sportsbet legs — the book may price
+                {resultBook.label} prices come from The Odds API when{" "}
+                <code>ODDS_API_KEY</code> is set. Combined SGM is a product of
+                individual {resultBook.label} legs — the book may price
                 correlation differently. Gamble responsibly.
               </p>
             </div>

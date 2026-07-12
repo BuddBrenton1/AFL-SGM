@@ -205,8 +205,10 @@ export interface ScanRequest {
   gameIds?: number[];
   maxResults?: number;
   minConfidence?: number;
-  /** Only keep legs/multis that have live Sportsbet prices */
+  /** Only keep legs/multis that have live book prices */
   sportsbetOnly?: boolean;
+  /** Selected odds platform (Sportsbet, TAB, Neds, …) */
+  bookmaker?: string;
 }
 
 export interface ScanResult {
@@ -218,6 +220,9 @@ export interface ScanResult {
     maxSingleLegPrice?: number;
     minConfidence?: number;
     sportsbetOnly?: boolean;
+    bookmaker?: string;
+    bookmakerLabel?: string;
+    bookmakerShort?: string;
   };
   gamesScanned: number;
   candidatesEvaluated: number;
@@ -228,6 +233,9 @@ export interface ScanResult {
     configured: boolean;
     connected: boolean;
     message: string;
+    bookmakerId?: string;
+    bookmakerLabel?: string;
+    bookmakerShort?: string;
     remainingRequests?: number | null;
     lastError?: string;
   };
