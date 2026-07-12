@@ -1,3 +1,8 @@
+import {
+  findPlayerLine,
+  type EspnMatchBox,
+  type EspnPlayerLine,
+} from "./espn-stats";
 import type {
   SavedGameStatus,
   SavedLegResult,
@@ -17,6 +22,11 @@ export interface GameResultPayload {
   round: number;
   venue: string;
   date: string;
+  espnEventId?: string | null;
+  players?: EspnPlayerLine[];
+  espnStatusText?: string;
+  espnCompleted?: boolean;
+  espnInProgress?: boolean;
 }
 
 function teamsMatch(a: string, b: string): boolean {
@@ -30,17 +40,27 @@ function settleMatchResult(
   leg: SavedLegSnapshot,
   game: GameResultPayload,
 ): SavedLegResult | null {
-  if (leg.market !== "match_result" || game.complete < 100 || !game.winner) {
-    return null;
-  }
+  if (leg.market !== "match_result") return null;
+  // Only lock match result at full time
+  if (game.complete < 100 && !game.espnCompleted) return null;
+  const winner =
+    game.winner ||
+    (game.homeScore != null &&
+    game.awayScore != null &&
+    game.homeScore !== game.awayScore
+      ? game.homeScore > game.awayScore
+        ? game.homeTeam
+        : game.awayTeam
+      : undefined);
+  if (!winner) return null;
   const tipped = leg.label.replace(/\s+Win$/i, "").trim();
-  const won = teamsMatch(tipped, game.winner);
+  const won = teamsMatch(tipped, winner);
   return {
     legId: leg.id,
     outcome: won ? "won" : "lost",
     settledAt: new Date().toISOString(),
     settledBy: "auto",
-    note: `FT ${game.homeTeam} ${game.homeScore} – ${game.awayScore} ${game.awayTeam}`,
+    note: `FT ${game.homeTeam} ${game.homeScore ?? "–"} – ${game.awayScore ?? "–"} ${game.awayTeam}`,
   };
 }
 
@@ -48,7 +68,8 @@ function settleTotalPoints(
   leg: SavedLegSnapshot,
   game: GameResultPayload,
 ): SavedLegResult | null {
-  if (leg.market !== "total_points" || game.complete < 100) return null;
+  if (leg.market !== "total_points") return null;
+  if (game.complete < 100 && !game.espnCompleted) return null;
   if (leg.threshold == null || game.homeScore == null || game.awayScore == null) {
     return null;
   }
@@ -65,82 +86,156 @@ function settleTotalPoints(
   };
 }
 
-function settleLine(
+function statForMarket(
+  line: EspnPlayerLine,
+  market: SavedLegSnapshot["market"],
+): number | null {
+  switch (market) {
+    case "player_goal":
+      return line.goals;
+    case "player_disposal":
+      return line.disposals;
+    case "player_tackle":
+      return line.tackles;
+    case "player_mark":
+      return line.marks;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Live/auto player prop settlement from ESPN box score.
+ * - Threshold reached → won immediately (even in-play)
+ * - Game finished and under threshold → lost
+ * - Still in play and under → pending with live actual
+ */
+function settlePlayerFromBox(
   leg: SavedLegSnapshot,
   game: GameResultPayload,
 ): SavedLegResult | null {
-  if (leg.market !== "line" || game.complete < 100) return null;
-  // Line markets are rare in current scanner; leave pending unless we can infer
-  return null;
+  if (!isPlayerMarket(leg.market) || !leg.playerName || leg.threshold == null) {
+    return null;
+  }
+  if (!game.players?.length) return null;
+
+  const line = findPlayerLine(game.players, leg.playerName);
+  if (!line) {
+    // At FT with a full box and no player row → treat as 0 / missed
+    if (game.espnCompleted || game.complete >= 100) {
+      return {
+        legId: leg.id,
+        outcome: "lost",
+        actual: 0,
+        settledAt: new Date().toISOString(),
+        settledBy: "auto",
+        note: `${leg.playerName} not found in FT box score`,
+      };
+    }
+    return null;
+  }
+
+  const actual = statForMarket(line, leg.market);
+  if (actual == null) return null;
+
+  if (actual >= leg.threshold) {
+    return {
+      legId: leg.id,
+      outcome: "won",
+      actual,
+      settledAt: new Date().toISOString(),
+      settledBy: "auto",
+      note: `Live ${leg.playerName}: ${actual} (need ${leg.threshold}+)`,
+    };
+  }
+
+  if (game.espnCompleted || game.complete >= 100) {
+    return {
+      legId: leg.id,
+      outcome: "lost",
+      actual,
+      settledAt: new Date().toISOString(),
+      settledBy: "auto",
+      note: `FT ${leg.playerName}: ${actual} (needed ${leg.threshold}+)`,
+    };
+  }
+
+  // Still alive — keep pending but store live progress
+  return {
+    legId: leg.id,
+    outcome: "pending",
+    actual,
+    settledBy: "auto",
+    note: `Live ${leg.playerName}: ${actual} / ${leg.threshold}+`,
+  };
 }
 
-/** Auto-settle match winner + totals from Squiggle FT score. */
+/** Auto-settle from Squiggle FT + ESPN live player box. */
 export function autoSettleFromGame(
   item: SavedSgm,
   game: GameResultPayload,
 ): SavedSgm {
+  const complete =
+    game.espnCompleted || game.complete >= 100
+      ? 100
+      : game.espnInProgress
+        ? Math.max(game.complete, 1)
+        : game.complete;
+
   const gameStatus: SavedGameStatus = {
-    complete: game.complete,
+    complete,
     homeTeam: game.homeTeam,
     awayTeam: game.awayTeam,
     homeScore: game.homeScore,
     awayScore: game.awayScore,
     winner: game.winner,
     lastCheckedAt: new Date().toISOString(),
+    espnEventId: game.espnEventId ?? item.gameStatus.espnEventId,
+    espnStatusText: game.espnStatusText,
   };
 
   const updates: SavedLegResult[] = [];
   for (const leg of item.legs) {
     const existing = item.legResults.find((r) => r.legId === leg.id);
-    if (existing && existing.outcome !== "pending" && existing.settledBy === "manual") {
+    // Never reopen a locked won/lost
+    if (existing && (existing.outcome === "won" || existing.outcome === "lost")) {
       continue;
     }
+
     const hit =
+      settlePlayerFromBox(leg, game) ??
       settleMatchResult(leg, game) ??
-      settleTotalPoints(leg, game) ??
-      settleLine(leg, game);
+      settleTotalPoints(leg, game);
     if (hit) updates.push(hit);
   }
 
-  const next = applyLegResults(
-    { ...item, gameStatus },
-    updates,
-  );
-  return next;
+  return applyLegResults({ ...item, gameStatus }, updates);
 }
 
-/** Settle a player prop from an entered actual stat. */
-export function settlePlayerLeg(
-  item: SavedSgm,
-  legId: string,
-  actual: number,
-): SavedSgm {
-  const leg = item.legs.find((l) => l.id === legId);
-  if (!leg || !isPlayerMarket(leg.market) || leg.threshold == null) return item;
-  const hit = actual >= leg.threshold;
-  return applyLegResults(item, [
-    {
-      legId,
-      outcome: hit ? "won" : "lost",
-      actual,
-      settledAt: new Date().toISOString(),
-      settledBy: "manual",
-      note: `${leg.playerName ?? "Player"} finished with ${actual}`,
-    },
-  ]);
-}
-
-export function markLegOutcome(
-  item: SavedSgm,
-  legId: string,
-  outcome: "won" | "lost",
-): SavedSgm {
-  return applyLegResults(item, [
-    {
-      legId,
-      outcome,
-      settledAt: new Date().toISOString(),
-      settledBy: "manual",
-    },
-  ]);
+/** Merge ESPN box into a Squiggle game payload. */
+export function mergeEspnBox(
+  game: GameResultPayload,
+  box: EspnMatchBox | null,
+): GameResultPayload {
+  if (!box) return game;
+  return {
+    ...game,
+    espnEventId: box.eventId,
+    players: box.players,
+    espnStatusText: box.statusText,
+    espnCompleted: box.completed,
+    espnInProgress: box.inProgress,
+    homeScore: box.homeScore ?? game.homeScore,
+    awayScore: box.awayScore ?? game.awayScore,
+    winner: box.completed
+      ? box.homeScore != null &&
+        box.awayScore != null &&
+        box.homeScore !== box.awayScore
+        ? box.homeScore > box.awayScore
+          ? box.homeTeam
+          : box.awayTeam
+        : game.winner
+      : game.winner,
+    complete: box.completed ? 100 : game.complete,
+  };
 }

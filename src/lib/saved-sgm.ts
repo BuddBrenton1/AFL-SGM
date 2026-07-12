@@ -34,6 +34,8 @@ export interface SavedGameStatus {
   awayScore?: number;
   winner?: string;
   lastCheckedAt?: string;
+  espnEventId?: string | null;
+  espnStatusText?: string;
 }
 
 export interface SavedSgm {
@@ -155,9 +157,10 @@ export function deriveMultiOutcome(item: SavedSgm): MultiOutcome {
     return outcomes.some((o) => o === "won") ? "won" : "pending";
   }
   if (item.gameStatus.complete >= 100 && outcomes.some((o) => o === "pending")) {
+    // Waiting on box-score feed to finish settling remaining props
     return "needs_stats";
   }
-  if (item.gameStatus.complete > 0) return "open";
+  if (item.gameStatus.complete > 0 || item.gameStatus.espnStatusText) return "open";
   return "pending";
 }
 
