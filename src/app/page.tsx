@@ -393,6 +393,9 @@ export default function HomePage() {
                     ))}
                   </div>
                 </div>
+                <p className="mt-2 text-xs text-[var(--muted)]">
+                  Builds up to 25 legs. Every single leg is capped at $1.35.
+                </p>
               </label>
             )}
 
@@ -543,7 +546,9 @@ export default function HomePage() {
                 {result.combinationsChecked.toLocaleString()} combos
               </span>
               <span>
-                Mode: {result.mode === "legs" ? `${result.target.legCount} legs` : `~$${result.target.targetOdds}`}
+                Mode: {result.mode === "legs"
+                  ? `${result.target.legCount} legs`
+                  : `~$${result.target.targetOdds} · legs ≤ $1.35`}
               </span>
             </div>
 

@@ -3,6 +3,8 @@ import { combineIndependentProb, combineOdds, legEdge } from "./odds";
 
 export const MIN_LEGS = 2;
 export const MAX_LEGS = 25;
+/** In target-price mode, every leg must be at or under this decimal price. */
+export const MAX_SINGLE_LEG_PRICE = 1.35;
 
 function combinations<T>(arr: T[], k: number): T[][] {
   const out: T[][] = [];
@@ -349,6 +351,99 @@ function enumerateCombos(
   return beamBuildCombos(pool, k, maxResults);
 }
 
+/**
+ * Build SGMs toward a target price using only short legs (≤ maxSinglePrice),
+ * up to MAX_LEGS. Greedy product chase + a few start variants.
+ */
+function buildTowardTargetPrice(
+  pool: CandidateLeg[],
+  target: number,
+  maxSinglePrice: number,
+  maxResults: number,
+): { combos: CandidateLeg[][]; checked: number } {
+  const shortPool = pool
+    .filter((l) => l.odds <= maxSinglePrice + 1e-9)
+    .sort((a, b) => legEdge(b) - legEdge(a) || a.odds - b.odds);
+
+  let checked = 0;
+  const combos: CandidateLeg[][] = [];
+
+  function chase(ordered: CandidateLeg[], start?: CandidateLeg): CandidateLeg[] | null {
+    const picked: CandidateLeg[] = [];
+    const used = new Set<string>();
+    let product = 1;
+
+    if (start) {
+      picked.push(start);
+      used.add(start.id);
+      product *= start.odds;
+      checked++;
+    }
+
+    while (picked.length < MAX_LEGS && product < target * 0.98) {
+      let best: CandidateLeg | null = null;
+      let bestScore = -Infinity;
+
+      for (const cand of ordered) {
+        if (used.has(cand.id)) continue;
+        if (cand.odds > maxSinglePrice + 1e-9) continue;
+        if (!canAdd(picked, cand)) continue;
+
+        const nextProduct = product * cand.odds;
+        const overshoot = nextProduct > target ? nextProduct / target : 1;
+        const distanceBefore = Math.abs(Math.log(Math.max(product, 1.0001)) - Math.log(target));
+        const distanceAfter = Math.abs(Math.log(nextProduct) - Math.log(target));
+        const progress = distanceBefore - distanceAfter;
+        const score =
+          progress * 3 +
+          legEdge(cand) * 0.5 -
+          (overshoot > 1.15 ? (overshoot - 1.15) * 2 : 0) -
+          correlationPenalty([...picked, cand]) * 0.3;
+
+        checked++;
+        if (score > bestScore) {
+          bestScore = score;
+          best = cand;
+        }
+      }
+
+      if (!best) break;
+      if (product >= target * 0.85 && product * best.odds > target * 1.35) break;
+
+      picked.push(best);
+      used.add(best.id);
+      product *= best.odds;
+    }
+
+    if (picked.length < MIN_LEGS) return null;
+    return picked;
+  }
+
+  const primary = chase(shortPool);
+  if (primary) combos.push(primary);
+
+  for (const start of shortPool.slice(0, Math.min(14, shortPool.length))) {
+    const variant = chase(shortPool, start);
+    if (variant) combos.push(variant);
+  }
+
+  const byShortest = [...shortPool].sort((a, b) => a.odds - b.odds || legEdge(b) - legEdge(a));
+  const shortestStack = chase(byShortest);
+  if (shortestStack) combos.push(shortestStack);
+
+  const byConf = [...shortPool].sort((a, b) => b.confidence - a.confidence || a.odds - b.odds);
+  const confStack = chase(byConf);
+  if (confStack) combos.push(confStack);
+
+  for (let i = 0; i < Math.min(8, maxResults * 2); i++) {
+    const shuffled = [...shortPool].sort(() => Math.random() - 0.5);
+    const v = chase(shuffled);
+    if (v) combos.push(v);
+  }
+
+  return { combos, checked };
+}
+
 export function deepScanGame(opts: {
   gameId: number;
   matchup: string;
@@ -360,14 +455,117 @@ export function deepScanGame(opts: {
   targetOdds?: number;
   maxResults?: number;
   sportsbetLink?: string;
+  /** Max decimal price per leg when mode is odds (default 1.35) */
+  maxSingleLegPrice?: number;
 }): ScanEngineResult {
   const { mode, maxResults = 8 } = opts;
+  const maxSingle =
+    opts.maxSingleLegPrice != null ? opts.maxSingleLegPrice : MAX_SINGLE_LEG_PRICE;
   const requested =
     mode === "legs"
       ? Math.min(MAX_LEGS, Math.max(MIN_LEGS, opts.legCount ?? 3))
       : 0;
 
-  // For huge SGMs, keep more short-priced legs so we can actually fill 20–25
+  const gameMeta = {
+    gameId: opts.gameId,
+    matchup: opts.matchup,
+    venue: opts.venue,
+    round: opts.round,
+    sportsbetLink: opts.sportsbetLink,
+  };
+
+  // Target-price mode: short legs only (≤ $1.35), up to 25 legs
+  if (mode === "odds" && opts.targetOdds) {
+    const target = opts.targetOdds;
+    const shortLegs = opts.legs.filter((l) => l.odds <= maxSingle + 1e-9);
+    const rankedShort = [...shortLegs].sort(
+      (a, b) => legEdge(b) - legEdge(a) || a.odds - b.odds,
+    );
+    const pool = rankedShort.slice(0, Math.min(rankedShort.length, 80));
+    const candidatesEvaluated = opts.legs.length;
+
+    const { combos, checked } = buildTowardTargetPrice(
+      pool,
+      target,
+      maxSingle,
+      maxResults,
+    );
+
+    let combinationsChecked = checked;
+    const multis: SgmMulti[] = [];
+
+    for (const combo of combos) {
+      if (combo.some((l) => l.odds > maxSingle + 1e-9)) continue;
+      if (hasConflicts(combo)) continue;
+      multis.push(buildMulti(gameMeta, combo));
+    }
+
+    for (const k of [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 22, 25]) {
+      if (k > pool.length) continue;
+      const { combos: fixed, checked: c } = enumerateCombos(pool, k, maxResults);
+      combinationsChecked += c;
+      for (const combo of fixed) {
+        if (combo.some((l) => l.odds > maxSingle + 1e-9)) continue;
+        if (hasConflicts(combo)) continue;
+        multis.push(buildMulti(gameMeta, combo));
+      }
+    }
+
+    const filtered = multis
+      .filter((m) => m.legs.every((l) => l.odds <= maxSingle + 1e-9))
+      .filter((m) => m.legs.length <= MAX_LEGS)
+      .map((m) => ({
+        multi: m,
+        dist:
+          Math.abs(Math.log(m.combinedOdds) - Math.log(target)) /
+          Math.log(Math.max(target, 2)),
+      }))
+      .filter(
+        (x) =>
+          x.multi.combinedOdds >= target * 0.55 &&
+          x.multi.combinedOdds <= target * 1.6,
+      )
+      .sort((a, b) => {
+        const scoreA =
+          a.multi.edgeScore -
+          a.dist * 1.4 +
+          a.multi.sportsbetCoverage * 0.1 -
+          Math.max(0, a.multi.legs.length - 18) * 0.01;
+        const scoreB =
+          b.multi.edgeScore -
+          b.dist * 1.4 +
+          b.multi.sportsbetCoverage * 0.1 -
+          Math.max(0, b.multi.legs.length - 18) * 0.01;
+        return scoreB - scoreA;
+      })
+      .map((x) => x.multi);
+
+    const selected: SgmMulti[] = [];
+    for (const m of filtered) {
+      const sig = m.legs
+        .map((l) => l.id)
+        .sort()
+        .join();
+      const overlapNeeded = Math.max(2, Math.floor(m.legs.length * 0.75));
+      const tooClose = selected.some((s) => {
+        const shared = s.legs.filter((l) => m.legs.some((x) => x.id === l.id)).length;
+        return shared >= overlapNeeded;
+      });
+      if (tooClose) continue;
+      if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) continue;
+      if (!m.rationale.some((r) => r.includes("max single"))) {
+        m.rationale.push(
+          `Target-price rule: max ${MAX_LEGS} legs, each ≤ $${maxSingle.toFixed(2)}`,
+        );
+      }
+      selected.push(m);
+      if (selected.length >= maxResults) break;
+    }
+
+    return { multis: selected, candidatesEvaluated, combinationsChecked };
+  }
+
+  // Fixed leg-count mode
   const minOdds = requested >= 12 ? 1.08 : requested >= 8 ? 1.15 : 1.28;
   const maxProb = requested >= 12 ? 0.96 : 0.88;
 
@@ -380,7 +578,6 @@ export function deepScanGame(opts: {
     return legEdge(b) + spiceB + sbBoostB - (legEdge(a) + spiceA + sbBoostA);
   });
 
-  // Prefer enough unique markets to fill large SGMs
   const poolSize =
     requested >= 20
       ? Math.min(ranked.length, 80)
@@ -391,83 +588,37 @@ export function deepScanGame(opts: {
           : Math.min(ranked.length, 20);
   let pool = ranked.slice(0, Math.max(poolSize, requested));
 
-  // If still short of k, widen to almost all candidates
-  if (mode === "legs" && pool.length < requested) {
+  if (pool.length < requested) {
     pool = [...opts.legs]
       .sort((a, b) => legEdge(b) - legEdge(a))
       .slice(0, Math.min(opts.legs.length, Math.max(requested + 10, 80)));
   }
   const candidatesEvaluated = opts.legs.length;
 
-  let legSizes: number[];
-  if (mode === "legs") {
-    legSizes = [requested];
-  } else {
-    // Odds mode: try a wider range so big prices can land
-    legSizes = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 22, 25];
-  }
-
   const multis: SgmMulti[] = [];
   let combinationsChecked = 0;
 
-  for (const k of legSizes) {
-    if (k > pool.length) continue;
-    const { combos, checked } = enumerateCombos(pool, k, maxResults);
+  if (requested <= pool.length) {
+    const { combos, checked } = enumerateCombos(pool, requested, maxResults);
     combinationsChecked += checked;
-
     for (const combo of combos) {
       if (hasConflicts(combo)) continue;
-      multis.push(
-        buildMulti(
-          {
-            gameId: opts.gameId,
-            matchup: opts.matchup,
-            venue: opts.venue,
-            round: opts.round,
-            sportsbetLink: opts.sportsbetLink,
-          },
-          combo,
-        ),
-      );
+      multis.push(buildMulti(gameMeta, combo));
     }
   }
 
-  let filtered = multis;
-  if (mode === "odds" && opts.targetOdds) {
-    const target = opts.targetOdds;
-    filtered = multis
-      .map((m) => ({
-        multi: m,
-        dist:
-          Math.abs(Math.log(m.combinedOdds) - Math.log(target)) /
-          Math.log(Math.max(target, 2)),
-      }))
-      .filter(
-        (x) =>
-          x.multi.combinedOdds >= target * 0.45 &&
-          x.multi.combinedOdds <= target * 2.2,
-      )
-      .sort((a, b) => {
-        const scoreA = a.multi.edgeScore - a.dist * 1.2 + a.multi.sportsbetCoverage * 0.1;
-        const scoreB = b.multi.edgeScore - b.dist * 1.2 + b.multi.sportsbetCoverage * 0.1;
-        return scoreB - scoreA;
-      })
-      .map((x) => x.multi);
-  } else {
-    // Large SGMs are naturally long-priced — don't force $2.20 floor
-    const minCombined = requested >= 10 ? 1.5 : 2.2;
-    filtered = multis
-      .filter((m) => m.combinedOdds >= minCombined)
-      .sort(
-        (a, b) =>
-          b.edgeScore +
-          priceAttractiveness(b.combinedOdds) +
-          b.sportsbetCoverage * 0.1 -
-          (a.edgeScore + priceAttractiveness(a.combinedOdds) + a.sportsbetCoverage * 0.1),
-      );
-    if (!filtered.length) {
-      filtered = multis.sort((a, b) => b.edgeScore - a.edgeScore);
-    }
+  const minCombined = requested >= 10 ? 1.5 : 2.2;
+  let filtered = multis
+    .filter((m) => m.combinedOdds >= minCombined)
+    .sort(
+      (a, b) =>
+        b.edgeScore +
+        priceAttractiveness(b.combinedOdds) +
+        b.sportsbetCoverage * 0.1 -
+        (a.edgeScore + priceAttractiveness(a.combinedOdds) + a.sportsbetCoverage * 0.1),
+    );
+  if (!filtered.length) {
+    filtered = multis.sort((a, b) => b.edgeScore - a.edgeScore);
   }
 
   const selected: SgmMulti[] = [];
