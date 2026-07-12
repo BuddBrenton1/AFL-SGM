@@ -11,9 +11,9 @@ export async function POST(request: Request) {
 
     if (mode === "legs") {
       const legCount = Number(body.legCount ?? 3);
-      if (!Number.isFinite(legCount) || legCount < 2 || legCount > 6) {
+      if (!Number.isFinite(legCount) || legCount < 2 || legCount > 25) {
         return NextResponse.json(
-          { error: "Leg count must be between 2 and 6" },
+          { error: "Leg count must be between 2 and 25" },
           { status: 400 },
         );
       }

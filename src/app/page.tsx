@@ -349,7 +349,7 @@ export default function HomePage() {
                   <input
                     type="range"
                     min={2}
-                    max={6}
+                    max={25}
                     value={legCount}
                     onChange={(e) => setLegCount(Number(e.target.value))}
                     className="w-full accent-[var(--leather)]"
@@ -361,6 +361,9 @@ export default function HomePage() {
                     {legCount}
                   </span>
                 </div>
+                <p className="mt-2 text-xs text-[var(--muted)]">
+                  2–25 legs. Bigger SGMs use beam search so scans stay fast.
+                </p>
               </label>
             ) : (
               <label className="block">

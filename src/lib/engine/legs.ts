@@ -175,7 +175,7 @@ function scoreDisposalLeg(
   const teamIns = isHome ? game.homeInsOuts : game.awayInsOuts;
   const named = isPlayerNamed(player.name, teamIns);
   if (!named.named) return null;
-  if (!["midfielder", "wing", "ruck", "tagger"].includes(player.role) && player.form.disposalsAvg < 18) {
+  if (!["midfielder", "wing", "ruck", "tagger", "defender"].includes(player.role) && player.form.disposalsAvg < 14) {
     return null;
   }
 
@@ -218,7 +218,7 @@ function scoreDisposalLeg(
   if (hist != null) prob = clamp(prob * 0.5 + hist * 0.5, 0.05, 0.96);
   prob *= 0.9 + player.roleStability * 0.1;
 
-  if (prob < 0.28) return null;
+  if (prob < 0.18) return null;
 
   const odds = probToOdds(prob);
   const confidence = confidenceFromFactors(prob, factors);
@@ -247,7 +247,7 @@ function scoreTackleLeg(
   threshold: number,
   isHome: boolean,
 ): CandidateLeg | null {
-  if (player.form.tacklesAvg < 5) return null;
+  if (player.form.tacklesAvg < 3.5) return null;
   const teamIns = isHome ? game.homeInsOuts : game.awayInsOuts;
   if (!isPlayerNamed(player.name, teamIns).named) return null;
 
@@ -269,7 +269,7 @@ function scoreTackleLeg(
   }
 
   const prob = normalCdfAbove(meanT, Math.max(1.8, meanT * 0.25), threshold);
-  if (prob < 0.32) return null;
+  if (prob < 0.22) return null;
   const odds = probToOdds(prob);
   return {
     id: `${game.id}:tack:${player.id}:${threshold}`,
@@ -287,6 +287,49 @@ function scoreTackleLeg(
     valueScore: valueScore(prob, odds),
     factors,
     correlationGroup: `tackles:${player.id}`,
+  };
+}
+
+function scoreMarkLeg(
+  game: EnrichedGame,
+  player: PlayerProfile,
+  threshold: number,
+  isHome: boolean,
+): CandidateLeg | null {
+  if (player.form.marksAvg < threshold * 0.55) return null;
+  const teamIns = isHome ? game.homeInsOuts : game.awayInsOuts;
+  if (!isPlayerNamed(player.name, teamIns).named) return null;
+
+  const factors: FactorSignal[] = [];
+  let meanM = avg(player.form.last5Marks) * 0.5 + player.form.marksAvg * 0.5;
+  if (isHome) {
+    meanM *= 1.03;
+    push(factors, "home", "Home game", "positive", "Slight home marking lift", 0.01);
+  }
+  if (game.weather.condition === "heavy-rain" || game.weather.condition === "light-rain") {
+    meanM *= 0.92;
+    push(factors, "weather", "Weather", "negative", "Wet ball suppresses marks", -0.02);
+  }
+
+  const prob = normalCdfAbove(meanM, Math.max(1.5, meanM * 0.28), threshold);
+  if (prob < 0.2) return null;
+  const odds = probToOdds(prob);
+  return {
+    id: `${game.id}:mark:${player.id}:${threshold}`,
+    gameId: game.id,
+    market: "player_mark",
+    label: `${player.name} ${threshold}+ Marks`,
+    shortLabel: `${player.name.split(" ").pop()} ${threshold}+M`,
+    playerId: player.id,
+    playerName: player.name,
+    teamId: player.team,
+    threshold,
+    probability: prob,
+    odds,
+    confidence: confidenceFromFactors(prob, factors),
+    valueScore: valueScore(prob, odds),
+    factors,
+    correlationGroup: `marks:${player.id}`,
   };
 }
 
@@ -396,18 +439,22 @@ export function generateLegsForGame(game: EnrichedGame): CandidateLeg[] {
 
   const consider = (players: PlayerProfile[], isHome: boolean) => {
     for (const player of players) {
-      if (player.role.includes("forward") || player.form.goalsAvg >= 1.2) {
+      if (player.role.includes("forward") || player.form.goalsAvg >= 0.6) {
         for (const th of [1, 2, 3]) {
           const leg = scoreGoalLeg(game, player, th, isHome);
           if (leg) legs.push(leg);
         }
       }
-      for (const th of [20, 25, 30]) {
+      for (const th of [15, 20, 25, 30]) {
         const leg = scoreDisposalLeg(game, player, th, isHome);
         if (leg) legs.push(leg);
       }
-      for (const th of [5, 6, 8]) {
+      for (const th of [3, 4, 5, 6, 8]) {
         const leg = scoreTackleLeg(game, player, th, isHome);
+        if (leg) legs.push(leg);
+      }
+      for (const th of [4, 5, 6, 8]) {
+        const leg = scoreMarkLeg(game, player, th, isHome);
         if (leg) legs.push(leg);
       }
     }
