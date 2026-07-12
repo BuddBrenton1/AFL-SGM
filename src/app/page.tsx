@@ -51,6 +51,7 @@ export default function HomePage() {
   const [mode, setMode] = useState<Mode>("legs");
   const [legCount, setLegCount] = useState(3);
   const [targetOdds, setTargetOdds] = useState(12);
+  const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.35);
   const [selectedGames, setSelectedGames] = useState<number[]>([]);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -108,6 +109,7 @@ export default function HomePage() {
             mode,
             legCount,
             targetOdds,
+            maxSingleLegPrice: mode === "odds" ? maxSingleLegPrice : undefined,
             gameIds: selectedGames.length ? selectedGames : undefined,
             maxResults: 12,
           }),
@@ -366,37 +368,80 @@ export default function HomePage() {
                 </p>
               </label>
             ) : (
-              <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
-                  Target multi price ($)
-                </span>
-                <div className="mt-2 flex items-center gap-3">
-                  <input
-                    type="number"
-                    min={2}
-                    max={500}
-                    step={1}
-                    value={targetOdds}
-                    onChange={(e) => setTargetOdds(Number(e.target.value))}
-                    className="w-full border border-[var(--line)] bg-white px-4 py-3 text-lg font-semibold text-[var(--ink)] outline-none focus:border-[var(--turf)]"
-                  />
-                  <div className="flex gap-2">
-                    {[5, 10, 25, 50].map((v) => (
+              <div className="space-y-5">
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    Target multi price ($)
+                  </span>
+                  <div className="mt-2 flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={2}
+                      max={500}
+                      step={1}
+                      value={targetOdds}
+                      onChange={(e) => setTargetOdds(Number(e.target.value))}
+                      className="w-full border border-[var(--line)] bg-white px-4 py-3 text-lg font-semibold text-[var(--ink)] outline-none focus:border-[var(--turf)]"
+                    />
+                    <div className="flex gap-2">
+                      {[5, 10, 25, 50].map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setTargetOdds(v)}
+                          className="bg-[var(--mist)] px-3 py-2 text-sm font-semibold text-[var(--turf)]"
+                        >
+                          ${v}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    Max price per leg
+                  </span>
+                  <div className="mt-2 flex items-center gap-4">
+                    <input
+                      type="range"
+                      min={1.1}
+                      max={2.5}
+                      step={0.05}
+                      value={maxSingleLegPrice}
+                      onChange={(e) =>
+                        setMaxSingleLegPrice(Number(Number(e.target.value).toFixed(2)))
+                      }
+                      className="w-full accent-[var(--leather)]"
+                    />
+                    <span
+                      className="min-w-[4.5rem] text-right font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
+                      style={{ fontWeight: 600 }}
+                    >
+                      ${maxSingleLegPrice.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {[1.2, 1.35, 1.5, 1.65, 1.8, 2.0].map((v) => (
                       <button
                         key={v}
                         type="button"
-                        onClick={() => setTargetOdds(v)}
-                        className="bg-[var(--mist)] px-3 py-2 text-sm font-semibold text-[var(--turf)]"
+                        onClick={() => setMaxSingleLegPrice(v)}
+                        className={`px-2.5 py-1 text-xs font-semibold ${
+                          Math.abs(maxSingleLegPrice - v) < 0.001
+                            ? "bg-[var(--turf)] text-white"
+                            : "bg-[var(--mist)] text-[var(--turf)]"
+                        }`}
                       >
-                        ${v}
+                        ${v.toFixed(2)}
                       </button>
                     ))}
                   </div>
-                </div>
-                <p className="mt-2 text-xs text-[var(--muted)]">
-                  Builds up to 25 legs. Every single leg is capped at $1.35.
-                </p>
-              </label>
+                  <p className="mt-2 text-xs text-[var(--muted)]">
+                    Builds up to 25 legs. Only includes legs at or under this price.
+                  </p>
+                </label>
+              </div>
             )}
 
             <div className="flex flex-col justify-end">
@@ -548,7 +593,7 @@ export default function HomePage() {
               <span>
                 Mode: {result.mode === "legs"
                   ? `${result.target.legCount} legs`
-                  : `~$${result.target.targetOdds} · legs ≤ $1.35`}
+                  : `~$${result.target.targetOdds} · legs ≤ $${(result.target.maxSingleLegPrice ?? 1.35).toFixed(2)}`}
               </span>
             </div>
 

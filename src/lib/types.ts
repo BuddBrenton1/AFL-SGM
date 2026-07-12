@@ -188,6 +188,8 @@ export interface ScanRequest {
   mode: ScanMode;
   legCount?: number;
   targetOdds?: number;
+  /** Max decimal price per leg in target-odds mode (default 1.35) */
+  maxSingleLegPrice?: number;
   gameIds?: number[];
   maxResults?: number;
   minConfidence?: number;
@@ -196,7 +198,11 @@ export interface ScanRequest {
 export interface ScanResult {
   generatedAt: string;
   mode: ScanMode;
-  target: { legCount?: number; targetOdds?: number };
+  target: {
+    legCount?: number;
+    targetOdds?: number;
+    maxSingleLegPrice?: number;
+  };
   gamesScanned: number;
   candidatesEvaluated: number;
   combinationsChecked: number;

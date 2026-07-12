@@ -25,12 +25,24 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
+      if (body.maxSingleLegPrice != null) {
+        const cap = Number(body.maxSingleLegPrice);
+        if (!Number.isFinite(cap) || cap < 1.05 || cap > 3) {
+          return NextResponse.json(
+            { error: "Max single leg price must be between $1.05 and $3.00" },
+            { status: 400 },
+          );
+        }
+      }
     }
 
     const result = await runDeepScan({
       mode,
       legCount: body.legCount ? Number(body.legCount) : 3,
       targetOdds: body.targetOdds ? Number(body.targetOdds) : 10,
+      maxSingleLegPrice: body.maxSingleLegPrice
+        ? Number(body.maxSingleLegPrice)
+        : undefined,
       gameIds: body.gameIds,
       maxResults: body.maxResults ? Number(body.maxResults) : 12,
       minConfidence: body.minConfidence ? Number(body.minConfidence) : 0,

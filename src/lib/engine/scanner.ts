@@ -474,7 +474,7 @@ export function deepScanGame(opts: {
     sportsbetLink: opts.sportsbetLink,
   };
 
-  // Target-price mode: short legs only (≤ $1.35), up to 25 legs
+  // Target-price mode: short legs only (user max per-leg price), up to 25 legs
   if (mode === "odds" && opts.targetOdds) {
     const target = opts.targetOdds;
     const shortLegs = opts.legs.filter((l) => l.odds <= maxSingle + 1e-9);

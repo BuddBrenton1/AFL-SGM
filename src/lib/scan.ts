@@ -124,6 +124,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       mode,
       legCount: req.legCount,
       targetOdds: req.targetOdds,
+      maxSingleLegPrice: req.maxSingleLegPrice,
       maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
       sportsbetLink: board?.eventLink,
     });
@@ -138,18 +139,23 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     .sort((a, b) => b.edgeScore - a.edgeScore)
     .slice(0, maxResults);
 
+  const legCap = req.maxSingleLegPrice ?? 1.35;
   if (mode === "legs") {
     scanNotes.push(`Target construction: ${req.legCount ?? 3}-leg same game multis`);
   } else {
     scanNotes.push(
-      `Target price band around $${req.targetOdds ?? 10} · max 25 legs · each leg ≤ $1.35`,
+      `Target price band around $${req.targetOdds ?? 10} · max 25 legs · each leg ≤ $${legCap.toFixed(2)}`,
     );
   }
 
   return {
     generatedAt: new Date().toISOString(),
     mode,
-    target: { legCount: req.legCount, targetOdds: req.targetOdds },
+    target: {
+      legCount: req.legCount,
+      targetOdds: req.targetOdds,
+      maxSingleLegPrice: mode === "odds" ? legCap : undefined,
+    },
     gamesScanned: selected.length,
     candidatesEvaluated,
     combinationsChecked,
