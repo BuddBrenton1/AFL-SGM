@@ -1,17 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --turf: #0c3b2e;
-  --turf-deep: #06251c;
-  --leather: #c45c26;
-  --flood: #e6b84a;
-  --mist: #e7efe6;
-  --stone: #d4ddd2;
-  --ink: #14201b;
-  --muted: #5a6b62;
-  --paper: #f4f7f2;
-  --line: rgba(12, 59, 46, 0.12);
-  --glow: rgba(230, 184, 74, 0.35);
+  /* Stadium turf — brighter, cleaner green */
+  --turf: #0f7a63;
+  --turf-deep: #0a4f42;
+  --turf-bright: #19a884;
+  /* Ember — energy without muddy terracotta */
+  --leather: #e4572e;
+  --leather-soft: #ff7a4d;
+  /* Floodlight gold */
+  --flood: #ffc857;
+  --flood-soft: #ffe29a;
+  /* Atmosphere */
+  --mist: #e3f4ef;
+  --mist-deep: #c8e8de;
+  --sky: #d7eef8;
+  --stone: #b9d4cb;
+  --ink: #12312b;
+  --muted: #4d6b63;
+  --paper: #f3faf7;
+  --paper-warm: #fff8ef;
+  --line: rgba(15, 122, 99, 0.14);
+  --glow: rgba(255, 200, 87, 0.4);
+  --shadow: rgba(10, 79, 66, 0.1);
   --background: var(--paper);
   --foreground: var(--ink);
 }
@@ -85,6 +96,16 @@ body {
   }
 }
 
+@keyframes glowShift {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .animate-rise {
   animation: rise 0.7s ease-out both;
 }
@@ -114,19 +135,47 @@ body {
 }
 
 .oval-glow {
+  animation: glowShift 8s ease-in-out infinite;
   background:
-    radial-gradient(ellipse 80% 55% at 70% 35%, rgba(230, 184, 74, 0.22), transparent 55%),
-    radial-gradient(ellipse 60% 50% at 20% 70%, rgba(12, 59, 46, 0.18), transparent 50%),
-    linear-gradient(165deg, #eef4ec 0%, #d7e4d6 42%, #c5d6c8 100%);
+    radial-gradient(ellipse 70% 50% at 78% 18%, rgba(255, 200, 87, 0.38), transparent 58%),
+    radial-gradient(ellipse 55% 45% at 12% 72%, rgba(25, 168, 132, 0.28), transparent 55%),
+    radial-gradient(ellipse 40% 35% at 55% 85%, rgba(215, 238, 248, 0.7), transparent 60%),
+    linear-gradient(160deg, #f3faf7 0%, #e3f4ef 38%, #d7eef8 72%, #eef7f3 100%);
 }
 
 .turf-grid {
   background-image:
-    linear-gradient(rgba(12, 59, 46, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(12, 59, 46, 0.05) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(rgba(15, 122, 99, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 122, 99, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, #000 20%, transparent 75%);
 }
 
 .brand-stroke {
-  -webkit-text-stroke: 1px rgba(12, 59, 46, 0.08);
+  -webkit-text-stroke: 1px rgba(15, 122, 99, 0.1);
+}
+
+.panel {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 18px 50px var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.fixture-card {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.fixture-card:hover {
+  transform: translateY(-2px);
+}
+
+.fixture-card.is-on {
+  border-color: var(--turf);
+  background: linear-gradient(180deg, #ffffff 0%, #f2fbf7 100%);
+  box-shadow: 0 12px 28px rgba(15, 122, 99, 0.12);
 }

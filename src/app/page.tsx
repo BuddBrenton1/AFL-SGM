@@ -56,9 +56,9 @@ function formatMatchDate(date: string) {
 }
 
 function confidenceTone(c: number) {
-  if (c >= 0.62) return "text-[#0c3b2e] bg-[#cfe3d4]";
-  if (c >= 0.48) return "text-[#6b4a12] bg-[#f3e2b0]";
-  return "text-[#7a3418] bg-[#f0d0c0]";
+  if (c >= 0.62) return "text-[var(--turf-deep)] bg-[var(--mist-deep)]";
+  if (c >= 0.48) return "text-[#7a5a10] bg-[var(--flood-soft)]";
+  return "text-[#8a3418] bg-[#ffd5c4]";
 }
 
 export default function HomePage() {
@@ -190,7 +190,7 @@ export default function HomePage() {
       <div className="pointer-events-none absolute inset-0 oval-glow" />
       <div className="pointer-events-none absolute inset-0 turf-grid opacity-60" />
 
-      <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-5 py-5 md:px-8">
+      <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5 md:px-8">
         <div className="flex items-baseline gap-2">
           <span
             className="font-[family-name:var(--font-teko)] text-4xl tracking-wide text-[var(--turf)] md:text-5xl"
@@ -206,8 +206,8 @@ export default function HomePage() {
           <div
             className={`hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold sm:flex ${
               sportsbetStatus?.configured
-                ? "bg-[#cfe3d4] text-[var(--turf)]"
-                : "bg-[#f3e2b0] text-[#6b4a12]"
+                ? "bg-[var(--mist-deep)] text-[var(--turf-deep)]"
+                : "bg-[var(--flood-soft)] text-[#7a5a10]"
             }`}
             title={sportsbetStatus?.message}
           >
@@ -242,7 +242,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="relative z-10 mx-auto grid max-w-6xl gap-10 px-5 pb-16 pt-6 md:grid-cols-[1.15fr_0.85fr] md:px-8 md:pt-10">
+      <section className="relative z-10 mx-auto grid max-w-7xl gap-10 px-5 pb-16 pt-6 md:grid-cols-[1.15fr_0.85fr] md:px-8 md:pt-10">
         <div>
           <p className="animate-rise mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-[var(--leather)]">
             Same game · deeper cut
@@ -260,7 +260,7 @@ export default function HomePage() {
           <div className="animate-rise-delay-2 mt-8 flex flex-wrap gap-3">
             <a
               href="#scanner"
-              className="rounded-full bg-[var(--leather)] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(196,92,38,0.28)] transition hover:translate-y-[-1px]"
+              className="rounded-full bg-[var(--leather)] px-6 py-3 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(228,87,46,0.32)] transition hover:translate-y-[-1px] hover:bg-[var(--leather-soft)]"
             >
               Build my multi
             </a>
@@ -278,7 +278,7 @@ export default function HomePage() {
             className="absolute inset-0"
             style={{
               background:
-                "linear-gradient(145deg, rgba(6,37,28,0.92), rgba(12,59,46,0.75)), url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22800%22 height=%22600%22 viewBox=%220 0 800 600%22%3E%3Cellipse cx=%22400%22 cy=%22310%22 rx=%22340%22 ry=%22200%22 fill=%22none%22 stroke=%22%23e6b84a%22 stroke-width=%223%22 opacity=%220.55%22/%3E%3Cellipse cx=%22400%22 cy=%22310%22 rx=%2280%22 ry=%2248%22 fill=%22none%22 stroke=%22%23e6b84a%22 stroke-width=%222%22 opacity=%220.7%22/%3E%3Cpath d=%22M60 310 H740 M400 110 V510%22 stroke=%22%23e6b84a%22 stroke-width=%222%22 opacity=%220.35%22/%3E%3C/svg%3E') center/cover",
+                "linear-gradient(145deg, rgba(10,79,66,0.94), rgba(15,122,99,0.78) 55%, rgba(228,87,46,0.35)), url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22800%22 height=%22600%22 viewBox=%220 0 800 600%22%3E%3Cellipse cx=%22400%22 cy=%22310%22 rx=%22340%22 ry=%22200%22 fill=%22none%22 stroke=%22%23ffc857%22 stroke-width=%223%22 opacity=%220.55%22/%3E%3Cellipse cx=%22400%22 cy=%22310%22 rx=%2280%22 ry=%2248%22 fill=%22none%22 stroke=%22%23ffc857%22 stroke-width=%222%22 opacity=%220.7%22/%3E%3Cpath d=%22M60 310 H740 M400 110 V510%22 stroke=%22%23ffc857%22 stroke-width=%222%22 opacity=%220.35%22/%3E%3C/svg%3E') center/cover",
             }}
           />
           <div className="relative flex h-full flex-col justify-between p-6 text-[var(--paper)] md:p-8">
@@ -328,9 +328,9 @@ export default function HomePage() {
 
       <section
         id="scanner"
-        className="relative z-10 mx-auto max-w-6xl px-5 pb-10 md:px-8"
+        className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8"
       >
-        <div className="border border-[var(--line)] bg-white/70 p-5 shadow-[0_20px_60px_rgba(20,32,27,0.06)] backdrop-blur md:p-8">
+        <div className="panel p-5 md:p-8">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <h2
@@ -372,8 +372,8 @@ export default function HomePage() {
           <div
             className={`mt-5 border px-4 py-3 text-sm ${
               sportsbetStatus?.configured
-                ? "border-[var(--turf)]/20 bg-[var(--mist)] text-[var(--turf)]"
-                : "border-[var(--flood)]/40 bg-[#fbf6e8] text-[#6b4a12]"
+                ? "border-[var(--turf)]/25 bg-[var(--mist)] text-[var(--turf-deep)]"
+                : "border-[var(--flood)]/50 bg-[var(--paper-warm)] text-[#7a5a10]"
             }`}
           >
             <p className="font-semibold">
@@ -627,7 +627,7 @@ export default function HomePage() {
 
       <section
         id="fixtures"
-        className="relative z-10 mx-auto max-w-6xl px-5 pb-10 md:px-8"
+        className="relative z-10 mx-auto max-w-7xl px-5 pb-10 md:px-8"
       >
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
@@ -657,12 +657,12 @@ export default function HomePage() {
         </div>
 
         {loadError && (
-          <p className="border border-[var(--leather)]/30 bg-[#f8ebe4] p-4 text-sm text-[var(--leather)]">
+          <p className="border border-[var(--leather)]/25 bg-[#fff1ea] p-4 text-sm text-[var(--leather)]">
             {loadError}
           </p>
         )}
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {fixtures.map((g, i) => {
             const on = selectedSet.has(g.id);
             return (
@@ -670,32 +670,35 @@ export default function HomePage() {
                 key={g.id}
                 type="button"
                 onClick={() => toggleGame(g.id)}
-                className={`border p-4 text-left transition ${
-                  on
-                    ? "border-[var(--turf)] bg-white shadow-[0_8px_24px_rgba(12,59,46,0.08)]"
-                    : "border-transparent bg-white/40 hover:bg-white/70"
+                className={`fixture-card border p-3.5 text-left ${
+                  on ? "is-on" : "border-transparent bg-white/45 hover:bg-white/75"
                 }`}
                 style={{ animationDelay: `${i * 40}ms` }}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
                       {g.roundName} · {formatMatchDate(g.date)}
                     </p>
                     <p
-                      className="mt-1 font-[family-name:var(--font-teko)] text-2xl text-[var(--ink)]"
+                      className="mt-1 font-[family-name:var(--font-teko)] text-[1.35rem] leading-none text-[var(--ink)]"
                       style={{ fontWeight: 600 }}
                     >
-                      {g.homeTeam}{" "}
-                      <span className="text-[var(--muted)]">vs</span> {g.awayTeam}
+                      {g.homeTeam}
                     </p>
-                    <p className="text-sm text-[var(--muted)]">
-                      {g.venue} · #{g.homeRank} vs #{g.awayRank} · proj{" "}
-                      {g.expectedTotal} pts
+                    <p
+                      className="font-[family-name:var(--font-teko)] text-[1.35rem] leading-none text-[var(--ink)]"
+                      style={{ fontWeight: 600 }}
+                    >
+                      <span className="mr-1 text-[var(--muted)]">vs</span>
+                      {g.awayTeam}
+                    </p>
+                    <p className="mt-1.5 truncate text-xs text-[var(--muted)]">
+                      {g.venue} · #{g.homeRank}/#{g.awayRank}
                     </p>
                   </div>
                   <span
-                    className={`mt-1 h-5 w-5 shrink-0 rounded-full border-2 ${
+                    className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 ${
                       on
                         ? "border-[var(--turf)] bg-[var(--flood)]"
                         : "border-[var(--stone)]"
@@ -704,52 +707,52 @@ export default function HomePage() {
                 </div>
 
                 {g.prediction && (
-                  <div className="mt-3 border border-[var(--line)] bg-[var(--mist)]/60 p-3">
+                  <div className="mt-2.5 border border-[var(--line)] bg-[var(--mist)]/70 p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-                        Bounce win prediction
+                      <p className="text-[9px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+                        Win %
                       </p>
-                      <p className="text-[11px] font-medium text-[var(--turf)]">
+                      <p className="truncate text-[10px] font-medium text-[var(--turf)]">
                         {g.prediction.summary}
                       </p>
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                       <div
-                        className={`p-2 ${
+                        className={`p-1.5 ${
                           g.prediction.favourite === "home"
                             ? "bg-[var(--turf)] text-[var(--paper)]"
-                            : "bg-white/70 text-[var(--ink)]"
+                            : "bg-white/80 text-[var(--ink)]"
                         }`}
                       >
-                        <p className="truncate text-[10px] uppercase tracking-wide opacity-80">
+                        <p className="truncate text-[9px] uppercase tracking-wide opacity-80">
                           {g.homeTeam}
                         </p>
                         <p
-                          className="font-[family-name:var(--font-teko)] text-3xl leading-none"
+                          className="font-[family-name:var(--font-teko)] text-2xl leading-none"
                           style={{ fontWeight: 600 }}
                         >
                           {(g.prediction.homeWinPct * 100).toFixed(0)}%
                         </p>
                       </div>
                       <div
-                        className={`p-2 ${
+                        className={`p-1.5 ${
                           g.prediction.favourite === "away"
                             ? "bg-[var(--turf)] text-[var(--paper)]"
-                            : "bg-white/70 text-[var(--ink)]"
+                            : "bg-white/80 text-[var(--ink)]"
                         }`}
                       >
-                        <p className="truncate text-[10px] uppercase tracking-wide opacity-80">
+                        <p className="truncate text-[9px] uppercase tracking-wide opacity-80">
                           {g.awayTeam}
                         </p>
                         <p
-                          className="font-[family-name:var(--font-teko)] text-3xl leading-none"
+                          className="font-[family-name:var(--font-teko)] text-2xl leading-none"
                           style={{ fontWeight: 600 }}
                         >
                           {(g.prediction.awayWinPct * 100).toFixed(0)}%
                         </p>
                       </div>
                     </div>
-                    <div className="mt-2 h-1.5 overflow-hidden bg-white/80">
+                    <div className="mt-1.5 h-1 overflow-hidden bg-white/80">
                       <div
                         className="h-full bg-[var(--leather)]"
                         style={{
@@ -757,16 +760,15 @@ export default function HomePage() {
                         }}
                       />
                     </div>
-                    <p className="mt-2 text-[10px] text-[var(--muted)]">
-                      Uses tip, ladder, venue, weather, lists & player form
-                    </p>
                   </div>
                 )}
 
-                <p className="mt-3 text-xs text-[var(--muted)]">{g.weather.summary}</p>
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                  <span className="bg-[var(--mist)] px-2 py-1 text-[var(--turf)]">
-                    {g.weather.condition} · {g.weather.tempC}°C · {g.weather.windKmh}km/h
+                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                  <span className="bg-[var(--mist)] px-1.5 py-0.5 text-[var(--turf-deep)]">
+                    {g.weather.condition} · {g.weather.tempC}°C
+                  </span>
+                  <span className="bg-[var(--sky)]/70 px-1.5 py-0.5 text-[var(--muted)]">
+                    proj {g.expectedTotal}
                   </span>
                 </div>
               </button>
@@ -777,7 +779,7 @@ export default function HomePage() {
 
       <section
         id="results"
-        className="relative z-10 mx-auto max-w-6xl px-5 pb-20 md:px-8"
+        className="relative z-10 mx-auto max-w-7xl px-5 pb-20 md:px-8"
       >
         <h2
           className="font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
@@ -818,7 +820,7 @@ export default function HomePage() {
               {result.multis.map((m, idx) => (
                 <article
                   key={m.id}
-                  className="animate-rise border border-[var(--line)] bg-white/80 p-5 backdrop-blur md:p-6"
+                  className="animate-rise border border-[var(--line)] bg-white/85 p-5 shadow-[0_14px_40px_var(--shadow)] backdrop-blur md:p-6"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
@@ -847,7 +849,7 @@ export default function HomePage() {
                           {(m.confidence * 100).toFixed(0)}% confidence
                         </span>
                         {m.sportsbetCoverage > 0 && (
-                          <span className="inline-block bg-[#0c3b2e] px-2 py-1 text-xs font-semibold text-[#e6b84a]">
+                          <span className="inline-block bg-[var(--turf-deep)] px-2 py-1 text-xs font-semibold text-[var(--flood)]">
                             {resultBook.shortLabel}{" "}
                             {Math.round(m.sportsbetCoverage * 100)}%
                             {m.sportsbetCombinedOdds != null
@@ -902,7 +904,7 @@ export default function HomePage() {
                           <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
                           {leg.label}
                           {leg.sportsbetOdds != null && (
-                            <span className="ml-2 bg-[#0c3b2e] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#e6b84a]">
+                            <span className="ml-2 bg-[var(--turf-deep)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--flood)]">
                               {resultBook.shortLabel}
                               {leg.sportsbetSelection
                                 ? ` · ${leg.sportsbetSelection}`
@@ -1010,7 +1012,7 @@ export default function HomePage() {
       <SavedSgmsSection />
 
       <footer className="relative z-10 border-t border-[var(--line)] bg-[var(--turf-deep)] px-5 py-8 text-[var(--paper)] md:px-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <p
             className="font-[family-name:var(--font-teko)] text-3xl"
             style={{ fontWeight: 600 }}

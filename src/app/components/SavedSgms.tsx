@@ -17,13 +17,13 @@ const POLL_MS = 45_000;
 function outcomeTone(o: MultiOutcome) {
   switch (o) {
     case "won":
-      return "bg-[#cfe3d4] text-[#0c3b2e]";
+      return "bg-[var(--mist-deep)] text-[var(--turf-deep)]";
     case "lost":
-      return "bg-[#f0d0c0] text-[#7a3418]";
+      return "bg-[#ffd5c4] text-[#8a3418]";
     case "needs_stats":
-      return "bg-[#f3e2b0] text-[#6b4a12]";
+      return "bg-[var(--flood-soft)] text-[#7a5a10]";
     case "open":
-      return "bg-[#dde8e2] text-[var(--turf)]";
+      return "bg-[var(--sky)] text-[var(--turf-deep)]";
     default:
       return "bg-[var(--mist)] text-[var(--muted)]";
   }
@@ -143,7 +143,7 @@ export function SavedSgmsSection() {
   return (
     <section
       id="saved"
-      className="relative z-10 mx-auto max-w-6xl px-5 pb-16 md:px-8"
+      className="relative z-10 mx-auto max-w-7xl px-5 pb-16 md:px-8"
     >
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -284,17 +284,17 @@ export function SavedSgmsSection() {
                           <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
                           {leg.label}
                           {result.outcome === "won" && (
-                            <span className="ml-2 bg-[#cfe3d4] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#0c3b2e]">
+                            <span className="ml-2 bg-[var(--mist-deep)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--turf-deep)]">
                               Hit
                             </span>
                           )}
                           {result.outcome === "lost" && (
-                            <span className="ml-2 bg-[#f0d0c0] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#7a3418]">
+                            <span className="ml-2 bg-[#ffd5c4] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#8a3418]">
                               Miss
                             </span>
                           )}
                           {result.outcome === "pending" && result.actual != null && (
-                            <span className="ml-2 bg-[var(--mist)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--turf)]">
+                            <span className="ml-2 bg-[var(--sky)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--turf-deep)]">
                               Live {result.actual}
                               {leg.threshold != null ? `/${leg.threshold}+` : ""}
                             </span>
