@@ -84,28 +84,95 @@ export function getSportsbetConfigStatus(): SportsbetStatus {
   };
 }
 
-function normalizeName(name: string): string {
+function normalizePersonName(name: string): string {
   return name
     .toLowerCase()
-    .replace(/magpies|blues|bombers|dockers|cats|suns|giants|hawks|demons|kangaroos|power|tigers|saints|swans|eagles|bulldogs|lions|crows/g, "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['’.]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
-function namesMatch(a: string, b: string): boolean {
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(
+      /magpies|blues|bombers|dockers|cats|suns|giants|hawks|demons|kangaroos|power|tigers|saints|swans|eagles|bulldogs|lions|crows/g,
+      "",
+    )
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Strict player match — no loose substring hits that grab the wrong athlete. */
+function playerNamesMatch(a: string, b: string): boolean {
+  const na = normalizePersonName(a);
+  const nb = normalizePersonName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+
+  const aParts = na.split(" ").filter(Boolean);
+  const bParts = nb.split(" ").filter(Boolean);
+  if (aParts.length < 2 || bParts.length < 2) return false;
+
+  const aFirst = aParts[0];
+  const bFirst = bParts[0];
+  const aLast = aParts[aParts.length - 1];
+  const bLast = bParts[bParts.length - 1];
+
+  // Exact first + last
+  if (aFirst === bFirst && aLast === bLast) return true;
+  // Initial + last (e.g. D Parish vs Darcy Parish)
+  if (aLast === bLast && aFirst[0] === bFirst[0] && (aFirst.length === 1 || bFirst.length === 1)) {
+    return true;
+  }
+  return false;
+}
+
+function teamNamesMatch(a: string, b: string): boolean {
   const na = normalizeName(a);
   const nb = normalizeName(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
   if (na.includes(nb) || nb.includes(na)) return true;
-  const aParts = na.split(" ");
-  const bParts = nb.split(" ");
-  // surname match for players
-  if (aParts.length >= 2 && bParts.length >= 2) {
-    return aParts[aParts.length - 1] === bParts[bParts.length - 1] &&
-      aParts[0][0] === bParts[0][0];
-  }
   return false;
+}
+
+/**
+ * Map our N+ milestone to Sportsbet over-line points.
+ * Prefer exact Over (N-0.5); also accept integer N when books price milestones that way.
+ */
+function matchingOverPoints(threshold: number): number[] {
+  return [threshold - 0.5, threshold];
+}
+
+function isOverOutcome(name: string): boolean {
+  const n = name.toLowerCase().trim();
+  return n === "over" || n === "yes" || n.startsWith("over ");
+}
+
+function pointMatchesThreshold(point: number | undefined, threshold: number): boolean {
+  if (point == null || !Number.isFinite(point)) return false;
+  return matchingOverPoints(threshold).some((p) => Math.abs(point - p) < 0.05);
+}
+
+function findPlayerOverLine(
+  lines: SportsbetPriceLine[],
+  marketKeys: string[],
+  playerName: string,
+  threshold: number,
+): SportsbetPriceLine | null {
+  const candidates = lines.filter((l) => {
+    if (!marketKeys.includes(l.marketKey)) return false;
+    if (!l.description || !playerNamesMatch(l.description, playerName)) return false;
+    if (!isOverOutcome(l.name)) return false;
+    return pointMatchesThreshold(l.point, threshold);
+  });
+
+  // Prefer the classic Over X.5 line when both X.5 and X exist
+  const half = candidates.find((l) => l.point != null && Math.abs(l.point - (threshold - 0.5)) < 0.05);
+  return half ?? candidates[0] ?? null;
 }
 
 function teamNamesCompatible(homeA: string, awayA: string, homeB: string, awayB: string): boolean {
@@ -121,8 +188,8 @@ function teamNamesCompatible(homeA: string, awayA: string, homeB: string, awayB:
     );
   }
   return (
-    (namesMatch(homeA, homeB) && namesMatch(awayA, awayB)) ||
-    (namesMatch(homeA, awayB) && namesMatch(awayA, homeB))
+    (teamNamesMatch(homeA, homeB) && teamNamesMatch(awayA, awayB)) ||
+    (teamNamesMatch(homeA, awayB) && teamNamesMatch(awayA, homeB))
   );
 }
 
@@ -305,30 +372,42 @@ function findSportsbetLine(
   const lines = board.lines;
 
   if (leg.market === "match_result") {
+    const team = leg.label.replace(/ Win$/, "");
     return (
       lines.find(
-        (l) =>
-          l.marketKey === "h2h" &&
-          namesMatch(l.name, leg.label.replace(/ Win$/, "")),
+        (l) => l.marketKey === "h2h" && teamNamesMatch(l.name, team),
       ) ?? null
     );
   }
 
   if (leg.market === "total_points" && leg.threshold != null) {
+    // Exact total line only — never fall back to a random Over
     return (
       lines.find(
         (l) =>
           l.marketKey === "totals" &&
-          l.name.toLowerCase() === "over" &&
+          isOverOutcome(l.name) &&
           l.point != null &&
-          Math.abs(l.point - leg.threshold!) < 0.2,
-      ) ??
-      lines.find((l) => l.marketKey === "totals" && l.name.toLowerCase() === "over") ??
-      null
+          Math.abs(l.point - leg.threshold!) < 0.05,
+      ) ?? null
     );
   }
 
-  if (!leg.playerName) return null;
+  if (!leg.playerName || leg.threshold == null) {
+    // Anytime 1+ goals has threshold 1
+    if (leg.market === "player_goal" && leg.playerName && (leg.threshold === 1 || leg.threshold == null)) {
+      return (
+        lines.find(
+          (l) =>
+            l.marketKey === "player_goal_scorer_anytime" &&
+            l.description &&
+            playerNamesMatch(l.description, leg.playerName!) &&
+            (l.name.toLowerCase() === "yes" || isOverOutcome(l.name)),
+        ) ?? null
+      );
+    }
+    return null;
+  }
 
   if (leg.market === "player_goal") {
     if (leg.threshold === 1) {
@@ -337,68 +416,64 @@ function findSportsbetLine(
           (l) =>
             l.marketKey === "player_goal_scorer_anytime" &&
             l.description &&
-            namesMatch(l.description, leg.playerName!),
-        ) ?? null
+            playerNamesMatch(l.description, leg.playerName!) &&
+            (l.name.toLowerCase() === "yes" || isOverOutcome(l.name)),
+        ) ??
+        findPlayerOverLine(
+          lines,
+          ["player_goals_scored_over"],
+          leg.playerName,
+          1,
+        )
       );
     }
-    const targetPoint = (leg.threshold ?? 2) - 0.5; // 2+ ≈ over 1.5
-    const overs = lines.filter(
-      (l) =>
-        l.marketKey === "player_goals_scored_over" &&
-        l.description &&
-        namesMatch(l.description, leg.playerName!) &&
-        l.name.toLowerCase() === "over",
-    );
-    return (
-      overs.find((l) => l.point != null && Math.abs(l.point - targetPoint) < 0.2) ??
-      overs.find((l) => l.point != null && l.point <= targetPoint + 0.6) ??
-      null
+    return findPlayerOverLine(
+      lines,
+      ["player_goals_scored_over"],
+      leg.playerName,
+      leg.threshold,
     );
   }
 
-  if (leg.market === "player_disposal" && leg.threshold != null) {
-    const target = leg.threshold - 0.5;
-    const overs = lines.filter(
-      (l) =>
-        (l.marketKey === "player_disposals" || l.marketKey === "player_disposals_over") &&
-        l.description &&
-        namesMatch(l.description, leg.playerName!) &&
-        l.name.toLowerCase() === "over",
-    );
-    return (
-      overs.find((l) => l.point != null && Math.abs(l.point - target) < 0.2) ??
-      overs.find((l) => l.point != null && Math.abs(l.point - leg.threshold!) < 0.6) ??
-      null
+  if (leg.market === "player_disposal") {
+    return findPlayerOverLine(
+      lines,
+      ["player_disposals", "player_disposals_over"],
+      leg.playerName,
+      leg.threshold,
     );
   }
 
-  if (leg.market === "player_tackle" && leg.threshold != null) {
-    const target = leg.threshold - 0.5;
-    const overs = lines.filter(
-      (l) =>
-        l.marketKey === "player_tackles_over" &&
-        l.description &&
-        namesMatch(l.description, leg.playerName!) &&
-        l.name.toLowerCase() === "over",
-    );
-    return (
-      overs.find((l) => l.point != null && Math.abs(l.point - target) < 0.2) ??
-      overs[0] ??
-      null
+  if (leg.market === "player_tackle") {
+    return findPlayerOverLine(
+      lines,
+      ["player_tackles_over"],
+      leg.playerName,
+      leg.threshold,
     );
   }
 
-  if (leg.market === "player_mark" && leg.threshold != null) {
-    const overs = lines.filter(
-      (l) =>
-        l.marketKey === "player_marks_over" &&
-        l.description &&
-        namesMatch(l.description, leg.playerName!),
+  if (leg.market === "player_mark") {
+    return findPlayerOverLine(
+      lines,
+      ["player_marks_over"],
+      leg.playerName,
+      leg.threshold,
     );
-    return overs[0] ?? null;
   }
 
   return null;
+}
+
+function formatSportsbetSelection(line: SportsbetPriceLine, leg: CandidateLeg): string {
+  if (leg.market === "match_result") return line.name;
+  if (line.point != null && isOverOutcome(line.name)) {
+    return `Over ${line.point}`;
+  }
+  if (line.name.toLowerCase() === "yes" && leg.threshold === 1) {
+    return "Anytime scorer";
+  }
+  return line.point != null ? `${line.name} ${line.point}` : line.name;
 }
 
 export function applySportsbetPrices(
@@ -413,7 +488,7 @@ export function applySportsbetPrices(
 
     const sportsbetOdds = roundOdds(line.price);
     const impliedProb = 1 / Math.max(sportsbetOdds, 1.01);
-    // Prefer Sportsbet price for display/combo; keep model probability for confidence
+    const selection = formatSportsbetSelection(line, leg);
     const vsModel = valueScore(leg.probability, sportsbetOdds);
 
     return {
@@ -421,8 +496,10 @@ export function applySportsbetPrices(
       odds: sportsbetOdds,
       modelOdds: leg.odds,
       sportsbetOdds,
-      sportsbetMarket: line.marketKey as string,
+      sportsbetMarket: line.marketKey,
       sportsbetLink: line.link ?? board.eventLink,
+      sportsbetPoint: line.point,
+      sportsbetSelection: selection,
       valueScore: vsModel,
       factors: [
         ...leg.factors,
@@ -435,7 +512,7 @@ export function applySportsbetPrices(
               : sportsbetOdds < (leg.modelOdds ?? leg.odds) * 0.95
                 ? "negative"
                 : "neutral",
-          detail: `Live Sportsbet ${sportsbetOdds.toFixed(2)} (model ~${(leg.modelOdds ?? leg.odds).toFixed(2)}, implied ${(impliedProb * 100).toFixed(0)}%)`,
+          detail: `Live Sportsbet ${selection} @ $${sportsbetOdds.toFixed(2)} (model ~$${(leg.modelOdds ?? leg.odds).toFixed(2)}, implied ${(impliedProb * 100).toFixed(0)}%)`,
           weight: 0,
         },
       ],

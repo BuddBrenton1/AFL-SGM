@@ -740,6 +740,9 @@ export default function HomePage() {
                           {leg.sportsbetOdds != null && (
                             <span className="ml-2 bg-[#0c3b2e] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#e6b84a]">
                               SB
+                              {leg.sportsbetSelection
+                                ? ` · ${leg.sportsbetSelection}`
+                                : ""}
                             </span>
                           )}
                         </span>

@@ -150,6 +150,10 @@ export interface CandidateLeg {
   sportsbetOdds?: number;
   sportsbetMarket?: string;
   sportsbetLink?: string;
+  /** Exact Sportsbet line point matched (e.g. 3.5 for 4+ marks) */
+  sportsbetPoint?: number;
+  /** Human-readable Sportsbet selection, e.g. "Over 3.5" */
+  sportsbetSelection?: string;
   confidence: number;
   valueScore: number;
   factors: FactorSignal[];
