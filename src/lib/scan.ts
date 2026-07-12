@@ -1,6 +1,12 @@
 import { getInsOuts } from "./ins-outs";
 import { playersForTeam } from "./players";
 import { fetchStandings, fetchUpcomingGames } from "./squiggle";
+import {
+  applySportsbetPrices,
+  getSportsbetConfigStatus,
+  loadSportsbetBoard,
+  lookupSportsbetBoard,
+} from "./sportsbet";
 import { TEAMS } from "./teams";
 import type {
   EnrichedGame,
@@ -75,6 +81,10 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     ? games.filter((g) => req.gameIds!.includes(g.id))
     : games.slice(0, 10);
 
+  const { byMatchup, status: sportsbetStatus } = await loadSportsbetBoard(
+    selected.map((g) => ({ homeTeam: g.homeTeam, awayTeam: g.awayTeam })),
+  );
+
   const mode = req.mode;
   const maxResults = req.maxResults ?? 12;
   const allMultis = [];
@@ -87,8 +97,24 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     "Same-game correlation haircut applied to stacked markets",
   ];
 
+  if (sportsbetStatus.configured && sportsbetStatus.connected) {
+    scanNotes.push(sportsbetStatus.message);
+    scanNotes.push(
+      "Sportsbet leg prices via The Odds API — SGM total is a product estimate (book may price correlation differently)",
+    );
+  } else if (sportsbetStatus.configured) {
+    scanNotes.push(sportsbetStatus.message);
+    if (sportsbetStatus.lastError) scanNotes.push(sportsbetStatus.lastError);
+  } else {
+    scanNotes.push(
+      "Sportsbet not linked — set ODDS_API_KEY for live Sportsbet prices (the-odds-api.com)",
+    );
+  }
+
   for (const game of selected) {
-    const legs = generateLegsForGame(game);
+    const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
+    const rawLegs = generateLegsForGame(game);
+    const legs = applySportsbetPrices(rawLegs, board);
     const scanned = deepScanGame({
       gameId: game.id,
       matchup: `${game.homeTeam} vs ${game.awayTeam}`,
@@ -99,6 +125,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       legCount: req.legCount,
       targetOdds: req.targetOdds,
       maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
+      sportsbetLink: board?.eventLink,
     });
     candidatesEvaluated += scanned.candidatesEvaluated;
     combinationsChecked += scanned.combinationsChecked;
@@ -126,5 +153,10 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     combinationsChecked,
     multis,
     scanNotes,
+    sportsbet: sportsbetStatus,
   };
+}
+
+export function sportsbetStatusOnly() {
+  return getSportsbetConfigStatus();
 }

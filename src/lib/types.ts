@@ -142,8 +142,14 @@ export interface CandidateLeg {
   threshold?: number;
   /** estimated true probability 0–1 */
   probability: number;
-  /** decimal odds estimate after juice */
+  /** decimal odds used for combo (Sportsbet when available) */
   odds: number;
+  /** Bounce model odds before Sportsbet overlay */
+  modelOdds?: number;
+  /** Live Sportsbet decimal price when matched */
+  sportsbetOdds?: number;
+  sportsbetMarket?: string;
+  sportsbetLink?: string;
   confidence: number;
   valueScore: number;
   factors: FactorSignal[];
@@ -166,6 +172,10 @@ export interface SgmMulti {
   round: number;
   legs: CandidateLeg[];
   combinedOdds: number;
+  /** Product of Sportsbet leg prices when every leg matched */
+  sportsbetCombinedOdds?: number | null;
+  sportsbetCoverage: number;
+  sportsbetLink?: string;
   combinedProbability: number;
   confidence: number;
   edgeScore: number;
@@ -192,4 +202,11 @@ export interface ScanResult {
   combinationsChecked: number;
   multis: SgmMulti[];
   scanNotes: string[];
+  sportsbet?: {
+    configured: boolean;
+    connected: boolean;
+    message: string;
+    remainingRequests?: number | null;
+    lastError?: string;
+  };
 }

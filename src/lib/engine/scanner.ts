@@ -52,13 +52,23 @@ function correlationPenalty(legs: CandidateLeg[]): number {
 }
 
 function buildMulti(
-  gameMeta: { gameId: number; matchup: string; venue: string; round: number },
+  gameMeta: {
+    gameId: number;
+    matchup: string;
+    venue: string;
+    round: number;
+    sportsbetLink?: string;
+  },
   legs: CandidateLeg[],
 ): SgmMulti {
   const penalty = correlationPenalty(legs);
   const rawProb = combineIndependentProb(legs.map((l) => l.probability));
   const adjustedProb = Math.max(0.001, rawProb * (1 - penalty));
   const combinedOdds = combineOdds(legs.map((l) => l.odds));
+  const sbPrices = legs.map((l) => l.sportsbetOdds).filter((x): x is number => x != null);
+  const sportsbetCoverage = sbPrices.length / Math.max(legs.length, 1);
+  const sportsbetCombinedOdds =
+    sbPrices.length === legs.length ? combineOdds(sbPrices) : null;
   const confidence =
     legs.reduce((a, l) => a + l.confidence, 0) / legs.length - penalty * 0.5;
 
@@ -74,12 +84,22 @@ function buildMulti(
   if (penalty > 0.08) {
     rationale.push("Correlation haircut applied for stacked same-team markets");
   }
+  if (sportsbetCombinedOdds != null) {
+    rationale.push(
+      `Sportsbet leg product ${sportsbetCombinedOdds.toFixed(2)} (actual SGM price may differ with correlation)`,
+    );
+  } else if (sbPrices.length > 0) {
+    rationale.push(
+      `Sportsbet matched ${sbPrices.length}/${legs.length} legs — incomplete book price`,
+    );
+  }
 
   const edgeScore =
     confidence * 0.55 +
     (1 - Math.min(combinedOdds / 100, 1)) * 0.1 +
     legs.reduce((a, l) => a + Math.max(0, l.valueScore), 0) * 0.2 -
-    penalty;
+    penalty +
+    sportsbetCoverage * 0.05;
 
   return {
     id: `${gameMeta.gameId}:${legs.map((l) => l.id).join("|")}`,
@@ -88,7 +108,10 @@ function buildMulti(
     venue: gameMeta.venue,
     round: gameMeta.round,
     legs,
-    combinedOdds,
+    combinedOdds: sportsbetCombinedOdds ?? combinedOdds,
+    sportsbetCombinedOdds,
+    sportsbetCoverage,
+    sportsbetLink: gameMeta.sportsbetLink,
     combinedProbability: adjustedProb,
     confidence: Math.max(0.05, Math.min(0.95, confidence)),
     edgeScore,
@@ -121,6 +144,7 @@ export function deepScanGame(opts: {
   legCount?: number;
   targetOdds?: number;
   maxResults?: number;
+  sportsbetLink?: string;
 }): ScanEngineResult {
   const { mode, maxResults = 8 } = opts;
   // Drop ultra-short favourites that crush multi price without adding insight
@@ -128,7 +152,9 @@ export function deepScanGame(opts: {
   const ranked = [...usable].sort((a, b) => {
     const spiceA = Math.min(Math.log(a.odds), 2.2) * 0.15;
     const spiceB = Math.min(Math.log(b.odds), 2.2) * 0.15;
-    return legEdge(b) + spiceB - (legEdge(a) + spiceA);
+    const sbBoostA = a.sportsbetOdds != null ? 0.08 : 0;
+    const sbBoostB = b.sportsbetOdds != null ? 0.08 : 0;
+    return legEdge(b) + spiceB + sbBoostB - (legEdge(a) + spiceA + sbBoostA);
   });
   const pool = ranked.slice(0, 20);
   const candidatesEvaluated = opts.legs.length;
@@ -175,6 +201,7 @@ export function deepScanGame(opts: {
             matchup: opts.matchup,
             venue: opts.venue,
             round: opts.round,
+            sportsbetLink: opts.sportsbetLink,
           },
           combo,
         ),
@@ -194,8 +221,8 @@ export function deepScanGame(opts: {
       }))
       .filter((x) => x.multi.combinedOdds >= target * 0.55 && x.multi.combinedOdds <= target * 1.8)
       .sort((a, b) => {
-        const scoreA = a.multi.edgeScore - a.dist * 1.2;
-        const scoreB = b.multi.edgeScore - b.dist * 1.2;
+        const scoreA = a.multi.edgeScore - a.dist * 1.2 + a.multi.sportsbetCoverage * 0.1;
+        const scoreB = b.multi.edgeScore - b.dist * 1.2 + b.multi.sportsbetCoverage * 0.1;
         return scoreB - scoreA;
       })
       .map((x) => x.multi);
@@ -205,8 +232,9 @@ export function deepScanGame(opts: {
       .sort(
         (a, b) =>
           b.edgeScore +
-          priceAttractiveness(b.combinedOdds) -
-          (a.edgeScore + priceAttractiveness(a.combinedOdds)),
+          priceAttractiveness(b.combinedOdds) +
+          b.sportsbetCoverage * 0.1 -
+          (a.edgeScore + priceAttractiveness(a.combinedOdds) + a.sportsbetCoverage * 0.1),
       );
     // Fallback if filters were too strict
     if (!filtered.length) {

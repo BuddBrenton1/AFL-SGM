@@ -56,17 +56,28 @@ export default function HomePage() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [scanning, setScanning] = useState(false);
+  const [sportsbetStatus, setSportsbetStatus] = useState<{
+    configured: boolean;
+    connected: boolean;
+    message: string;
+    remainingRequests?: number | null;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/fixtures");
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load fixtures");
+        const [fixRes, sbRes] = await Promise.all([
+          fetch("/api/fixtures"),
+          fetch("/api/sportsbet"),
+        ]);
+        const data = await fixRes.json();
+        const sb = await sbRes.json();
+        if (!fixRes.ok) throw new Error(data.error || "Failed to load fixtures");
         if (!cancelled) {
           setFixtures(data.games);
           setSelectedGames(data.games.slice(0, 4).map((g: FixtureCard) => g.id));
+          setSportsbetStatus(sb);
         }
       } catch (e) {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : "Load failed");
@@ -104,6 +115,7 @@ export default function HomePage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Scan failed");
         setResult(data);
+        if (data.sportsbet) setSportsbetStatus(data.sportsbet);
         document.getElementById("results")?.scrollIntoView({ behavior: "smooth" });
       } catch (e) {
         setScanError(e instanceof Error ? e.message : "Scan failed");
@@ -130,12 +142,38 @@ export default function HomePage() {
             AFL SGM Scanner
           </span>
         </div>
-        <a
-          href="#scanner"
-          className="rounded-full bg-[var(--turf)] px-4 py-2 text-sm font-medium text-[var(--paper)] transition hover:bg-[var(--turf-deep)]"
-        >
-          Start scan
-        </a>
+        <div className="flex items-center gap-3">
+          <div
+            className={`hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold sm:flex ${
+              sportsbetStatus?.configured
+                ? "bg-[#cfe3d4] text-[var(--turf)]"
+                : "bg-[#f3e2b0] text-[#6b4a12]"
+            }`}
+            title={sportsbetStatus?.message}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                sportsbetStatus?.connected
+                  ? "bg-[var(--turf)]"
+                  : sportsbetStatus?.configured
+                    ? "bg-[var(--flood)]"
+                    : "bg-[var(--leather)]"
+              }`}
+            />
+            Sportsbet{" "}
+            {sportsbetStatus?.connected
+              ? "live"
+              : sportsbetStatus?.configured
+                ? "keyed"
+                : "offline"}
+          </div>
+          <a
+            href="#scanner"
+            className="rounded-full bg-[var(--turf)] px-4 py-2 text-sm font-medium text-[var(--paper)] transition hover:bg-[var(--turf-deep)]"
+          >
+            Start scan
+          </a>
+        </div>
       </header>
 
       <section className="relative z-10 mx-auto grid max-w-6xl gap-10 px-5 pb-16 pt-6 md:grid-cols-[1.15fr_0.85fr] md:px-8 md:pt-10">
@@ -238,9 +276,42 @@ export default function HomePage() {
               <p className="max-w-2xl text-sm text-[var(--muted)]">
                 Choose leg count or a target price. Bounce enumerates same-game
                 combinations and ranks them by confidence, edge and correlation
-                risk.
+                risk — overlaying Sportsbet prices when linked.
               </p>
             </div>
+          </div>
+
+          <div
+            className={`mt-5 border px-4 py-3 text-sm ${
+              sportsbetStatus?.configured
+                ? "border-[var(--turf)]/20 bg-[var(--mist)] text-[var(--turf)]"
+                : "border-[var(--flood)]/40 bg-[#fbf6e8] text-[#6b4a12]"
+            }`}
+          >
+            <p className="font-semibold">
+              Sportsbet{" "}
+              {sportsbetStatus?.connected
+                ? "· live prices"
+                : sportsbetStatus?.configured
+                  ? "· key set"
+                  : "· not linked"}
+            </p>
+            <p className="mt-1 text-xs opacity-90">
+              {sportsbetStatus?.message ??
+                "Add ODDS_API_KEY from the-odds-api.com to pull live Sportsbet AFL prices."}
+            </p>
+            {!sportsbetStatus?.configured && (
+              <p className="mt-2 text-xs">
+                Copy <code className="bg-white/70 px-1">.env.example</code> →{" "}
+                <code className="bg-white/70 px-1">.env.local</code>, set{" "}
+                <code className="bg-white/70 px-1">ODDS_API_KEY</code>, restart.
+              </p>
+            )}
+            {sportsbetStatus?.remainingRequests != null && (
+              <p className="mt-1 text-xs opacity-80">
+                Odds API credits remaining: {sportsbetStatus.remainingRequests}
+              </p>
+            )}
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
@@ -498,11 +569,31 @@ export default function HomePage() {
                       >
                         {formatOdds(m.combinedOdds)}
                       </p>
-                      <span
-                        className={`inline-block px-2 py-1 text-xs font-semibold ${confidenceTone(m.confidence)}`}
-                      >
-                        {(m.confidence * 100).toFixed(0)}% confidence
-                      </span>
+                      <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+                        <span
+                          className={`inline-block px-2 py-1 text-xs font-semibold ${confidenceTone(m.confidence)}`}
+                        >
+                          {(m.confidence * 100).toFixed(0)}% confidence
+                        </span>
+                        {m.sportsbetCoverage > 0 && (
+                          <span className="inline-block bg-[#0c3b2e] px-2 py-1 text-xs font-semibold text-[#e6b84a]">
+                            SB {Math.round(m.sportsbetCoverage * 100)}%
+                            {m.sportsbetCombinedOdds != null
+                              ? ` · ${formatOdds(m.sportsbetCombinedOdds)}`
+                              : ""}
+                          </span>
+                        )}
+                      </div>
+                      {m.sportsbetLink && (
+                        <a
+                          href={m.sportsbetLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-block text-xs font-semibold text-[var(--leather)] underline"
+                        >
+                          Open on Sportsbet
+                        </a>
+                      )}
                     </div>
                   </div>
 
@@ -515,9 +606,29 @@ export default function HomePage() {
                         <span className="font-medium text-[var(--ink)]">
                           <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
                           {leg.label}
+                          {leg.sportsbetOdds != null && (
+                            <span className="ml-2 bg-[#0c3b2e] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#e6b84a]">
+                              SB
+                            </span>
+                          )}
                         </span>
                         <span className="text-[var(--muted)]">
-                          {formatOdds(leg.odds)} · {(leg.probability * 100).toFixed(0)}%
+                          {leg.sportsbetOdds != null ? (
+                            <>
+                              <span className="font-semibold text-[var(--turf)]">
+                                SB {formatOdds(leg.sportsbetOdds)}
+                              </span>
+                              {leg.modelOdds != null && (
+                                <span className="ml-2 text-xs">
+                                  model {formatOdds(leg.modelOdds)}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {formatOdds(leg.odds)} · {(leg.probability * 100).toFixed(0)}%
+                            </>
+                          )}
                         </span>
                       </li>
                     ))}
@@ -583,7 +694,9 @@ export default function HomePage() {
                 ))}
               </ul>
               <p className="mt-3 text-[11px] text-[var(--muted)]">
-                Odds are model estimates for research — not bookmaker prices. Gamble responsibly.
+                Sportsbet prices come from The Odds API when <code>ODDS_API_KEY</code> is set.
+                Combined SGM is a product of individual Sportsbet legs — the book may price
+                correlation differently. Gamble responsibly.
               </p>
             </div>
           </div>
