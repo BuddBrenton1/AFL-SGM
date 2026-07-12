@@ -115,6 +115,7 @@ export interface FixtureGame {
   complete: number;
   homeScore?: number;
   awayScore?: number;
+  winner?: string;
   tipHomeWinProb?: number;
   tipMargin?: number;
 }

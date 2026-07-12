@@ -28,6 +28,7 @@ interface SquiggleGame {
   complete: number;
   hscore?: number;
   ascore?: number;
+  winner?: string;
 }
 
 interface SquiggleStanding {
@@ -80,6 +81,7 @@ function mapGame(g: SquiggleGame, tip?: SquiggleTip): FixtureGame | null {
     complete: g.complete,
     homeScore: g.hscore,
     awayScore: g.ascore,
+    winner: g.winner,
     tipHomeWinProb,
     tipMargin: tip?.margin != null ? Number(tip.margin) : undefined,
   };
@@ -132,10 +134,23 @@ export async function fetchUpcomingGames(year = 2026): Promise<FixtureGame[]> {
     .sort((a, b) => a.unixtime - b.unixtime);
 }
 
-export async function fetchRoundGames(
-  round: number,
-  year = 2026,
-): Promise<FixtureGame[]> {
-  const games = await fetchUpcomingGames(year);
-  return games.filter((g) => g.round === round);
+export async function fetchGameById(
+  gameId: number,
+): Promise<FixtureGame | null> {
+  const data = await squiggle<{ games: SquiggleGame[] }>(
+    `games;game=${gameId}`,
+  );
+  const g = data.games?.[0];
+  if (!g) return null;
+  return mapGame(g);
+}
+
+export async function fetchCompletedGames(year = 2026): Promise<FixtureGame[]> {
+  const data = await squiggle<{ games: SquiggleGame[] }>(
+    `games;year=${year};complete=100`,
+  );
+  return data.games
+    .map((g) => mapGame(g))
+    .filter((g): g is FixtureGame => g !== null)
+    .sort((a, b) => b.unixtime - a.unixtime);
 }

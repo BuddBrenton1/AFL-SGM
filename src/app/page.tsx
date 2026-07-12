@@ -9,6 +9,8 @@ import {
 } from "@/lib/bookmakers";
 import type { ScanResult } from "@/lib/types";
 import { formatOdds } from "@/lib/engine/odds";
+import { createSavedSgm } from "@/lib/saved-sgm";
+import { SavedSgmsSection, useSavedSgmIds } from "./components/SavedSgms";
 
 interface FixtureCard {
   id: number;
@@ -94,6 +96,8 @@ export default function HomePage() {
       ),
     [result, bookmaker],
   );
+  const { savedIds, saveMulti } = useSavedSgmIds();
+  const [saveFlash, setSaveFlash] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,12 +227,18 @@ export default function HomePage() {
                 ? "keyed"
                 : "offline"}
           </div>
-          <a
-            href="#scanner"
-            className="rounded-full bg-[var(--turf)] px-4 py-2 text-sm font-medium text-[var(--paper)] transition hover:bg-[var(--turf-deep)]"
-          >
-            Start scan
-          </a>
+            <a
+              href="#saved"
+              className="hidden rounded-full border border-[var(--line)] bg-white/50 px-4 py-2 text-sm font-medium text-[var(--turf)] backdrop-blur sm:inline"
+            >
+              Saved SGMs
+            </a>
+            <a
+              href="#scanner"
+              className="rounded-full bg-[var(--turf)] px-4 py-2 text-sm font-medium text-[var(--paper)] transition hover:bg-[var(--turf-deep)]"
+            >
+              Start scan
+            </a>
         </div>
       </header>
 
@@ -856,6 +866,29 @@ export default function HomePage() {
                           Open on {resultBook.label}
                         </a>
                       )}
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const saved = createSavedSgm(m, {
+                              bookmaker: resultBook.id,
+                              bookmakerLabel: resultBook.label,
+                            });
+                            saveMulti(saved);
+                            setSaveFlash(m.id);
+                            setTimeout(() => setSaveFlash(null), 2000);
+                          }}
+                          className={`px-3 py-1.5 text-xs font-semibold transition ${
+                            savedIds.has(m.id) || saveFlash === m.id
+                              ? "bg-[var(--turf)] text-white"
+                              : "border border-[var(--turf)] text-[var(--turf)] hover:bg-[var(--mist)]"
+                          }`}
+                        >
+                          {savedIds.has(m.id) || saveFlash === m.id
+                            ? "Saved ✓"
+                            : "Save SGM"}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -973,6 +1006,8 @@ export default function HomePage() {
           </div>
         )}
       </section>
+
+      <SavedSgmsSection />
 
       <footer className="relative z-10 border-t border-[var(--line)] bg-[var(--turf-deep)] px-5 py-8 text-[var(--paper)] md:px-8">
         <div className="mx-auto flex max-w-6xl flex-col gap-2 md:flex-row md:items-center md:justify-between">
