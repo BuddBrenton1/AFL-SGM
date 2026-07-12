@@ -53,6 +53,7 @@ export default function HomePage() {
   const [targetOdds, setTargetOdds] = useState(12);
   const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.35);
   const [minConfidencePct, setMinConfidencePct] = useState(0);
+  const [sportsbetOnly, setSportsbetOnly] = useState(true);
   const [selectedGames, setSelectedGames] = useState<number[]>([]);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -112,6 +113,7 @@ export default function HomePage() {
             targetOdds,
             maxSingleLegPrice: mode === "odds" ? maxSingleLegPrice : undefined,
             minConfidence: minConfidencePct / 100,
+            sportsbetOnly,
             gameIds: selectedGames.length ? selectedGames : undefined,
             maxResults: 12,
           }),
@@ -518,6 +520,25 @@ export default function HomePage() {
                 ))}
               </div>
             </label>
+
+            <label className="mt-5 flex cursor-pointer items-start gap-3 border border-[var(--line)] bg-[var(--mist)]/50 p-4">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-[var(--turf)]"
+                checked={sportsbetOnly}
+                onChange={(e) => setSportsbetOnly(e.target.checked)}
+              />
+              <span>
+                <span className="block text-sm font-semibold text-[var(--ink)]">
+                  Sportsbet prices only
+                </span>
+                <span className="mt-1 block text-xs text-[var(--muted)]">
+                  Hide model-only markets. Every leg must have a live Sportsbet
+                  price (SB badge). Turn off to include Bounce estimates where
+                  Sportsbet has no matching line.
+                </span>
+              </span>
+            </label>
           </div>
         </div>
       </section>
@@ -650,6 +671,7 @@ export default function HomePage() {
                   Confidence ≥ {Math.round((result.target.minConfidence ?? 0) * 100)}%
                 </span>
               )}
+              {result.target.sportsbetOnly && <span>Sportsbet legs only</span>}
             </div>
 
             <div className="grid gap-4">

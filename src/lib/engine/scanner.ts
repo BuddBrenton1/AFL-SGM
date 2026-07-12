@@ -457,6 +457,7 @@ export function deepScanGame(opts: {
   sportsbetLink?: string;
   /** Max decimal price per leg when mode is odds (default 1.35) */
   maxSingleLegPrice?: number;
+  requireSportsbet?: boolean;
 }): ScanEngineResult {
   const { mode, maxResults = 8 } = opts;
   const maxSingle =
@@ -465,6 +466,11 @@ export function deepScanGame(opts: {
     mode === "legs"
       ? Math.min(MAX_LEGS, Math.max(MIN_LEGS, opts.legCount ?? 3))
       : 0;
+
+  // When Sportsbet-only, drop model-only candidates up front
+  const sourceLegs = opts.requireSportsbet
+    ? opts.legs.filter((l) => l.sportsbetOdds != null)
+    : opts.legs;
 
   const gameMeta = {
     gameId: opts.gameId,
@@ -477,7 +483,7 @@ export function deepScanGame(opts: {
   // Target-price mode: short legs only (user max per-leg price), up to 25 legs
   if (mode === "odds" && opts.targetOdds) {
     const target = opts.targetOdds;
-    const shortLegs = opts.legs.filter((l) => l.odds <= maxSingle + 1e-9);
+    const shortLegs = sourceLegs.filter((l) => l.odds <= maxSingle + 1e-9);
     const rankedShort = [...shortLegs].sort(
       (a, b) => legEdge(b) - legEdge(a) || a.odds - b.odds,
     );
@@ -569,7 +575,7 @@ export function deepScanGame(opts: {
   const minOdds = requested >= 12 ? 1.08 : requested >= 8 ? 1.15 : 1.28;
   const maxProb = requested >= 12 ? 0.96 : 0.88;
 
-  const usable = opts.legs.filter((l) => l.odds >= minOdds && l.probability <= maxProb);
+  const usable = sourceLegs.filter((l) => l.odds >= minOdds && l.probability <= maxProb);
   const ranked = [...usable].sort((a, b) => {
     const spiceA = Math.min(Math.log(a.odds), 2.2) * 0.15;
     const spiceB = Math.min(Math.log(b.odds), 2.2) * 0.15;
@@ -589,9 +595,9 @@ export function deepScanGame(opts: {
   let pool = ranked.slice(0, Math.max(poolSize, requested));
 
   if (pool.length < requested) {
-    pool = [...opts.legs]
+    pool = [...sourceLegs]
       .sort((a, b) => legEdge(b) - legEdge(a))
-      .slice(0, Math.min(opts.legs.length, Math.max(requested + 10, 80)));
+      .slice(0, Math.min(sourceLegs.length, Math.max(requested + 10, 80)));
   }
   const candidatesEvaluated = opts.legs.length;
 

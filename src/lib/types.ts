@@ -193,6 +193,8 @@ export interface ScanRequest {
   gameIds?: number[];
   maxResults?: number;
   minConfidence?: number;
+  /** Only keep legs/multis that have live Sportsbet prices */
+  sportsbetOnly?: boolean;
 }
 
 export interface ScanResult {
@@ -203,6 +205,7 @@ export interface ScanResult {
     targetOdds?: number;
     maxSingleLegPrice?: number;
     minConfidence?: number;
+    sportsbetOnly?: boolean;
   };
   gamesScanned: number;
   candidatesEvaluated: number;

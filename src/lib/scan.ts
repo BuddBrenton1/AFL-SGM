@@ -114,7 +114,14 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   for (const game of selected) {
     const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
     const rawLegs = generateLegsForGame(game);
-    const legs = applySportsbetPrices(rawLegs, board);
+    let legs = applySportsbetPrices(rawLegs, board);
+
+    if (req.sportsbetOnly) {
+      if (!board) continue;
+      legs = legs.filter((l) => l.sportsbetOdds != null);
+      if (legs.length < 2) continue;
+    }
+
     const scanned = deepScanGame({
       gameId: game.id,
       matchup: `${game.homeTeam} vs ${game.awayTeam}`,
@@ -127,6 +134,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       maxSingleLegPrice: req.maxSingleLegPrice,
       maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
       sportsbetLink: board?.eventLink,
+      requireSportsbet: !!req.sportsbetOnly,
     });
     candidatesEvaluated += scanned.candidatesEvaluated;
     combinationsChecked += scanned.combinationsChecked;
@@ -134,10 +142,19 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   }
 
   const minConf = Math.min(0.95, Math.max(0, req.minConfidence ?? 0));
-  const multis = allMultis
+  let multis = allMultis
     .filter((m) => m.confidence >= minConf)
-    .sort((a, b) => b.edgeScore - a.edgeScore)
-    .slice(0, maxResults);
+    .sort((a, b) => b.edgeScore - a.edgeScore);
+
+  if (req.sportsbetOnly) {
+    multis = multis.filter(
+      (m) =>
+        m.sportsbetCoverage >= 0.999 &&
+        m.legs.every((l) => l.sportsbetOdds != null),
+    );
+  }
+
+  multis = multis.slice(0, maxResults);
 
   const legCap = req.maxSingleLegPrice ?? 1.35;
   if (mode === "legs") {
@@ -152,6 +169,15 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       `Confidence floor: ${(minConf * 100).toFixed(0)}%+ (${multis.length} multis kept)`,
     );
   }
+  if (req.sportsbetOnly) {
+    scanNotes.push(
+      "Sportsbet-only mode: every leg must have a live Sportsbet price (model-only markets hidden)",
+    );
+  } else {
+    scanNotes.push(
+      "Model markets may appear without an SB badge when Sportsbet/Odds API has no matching line",
+    );
+  }
 
   return {
     generatedAt: new Date().toISOString(),
@@ -161,6 +187,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       targetOdds: req.targetOdds,
       maxSingleLegPrice: mode === "odds" ? legCap : undefined,
       minConfidence: minConf,
+      sportsbetOnly: !!req.sportsbetOnly,
     },
     gamesScanned: selected.length,
     candidatesEvaluated,

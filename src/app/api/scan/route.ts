@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       maxResults: body.maxResults ? Number(body.maxResults) : 12,
       minConfidence:
         body.minConfidence != null ? Number(body.minConfidence) : 0,
+      sportsbetOnly: body.sportsbetOnly === true,
     });
 
     return NextResponse.json(result);
