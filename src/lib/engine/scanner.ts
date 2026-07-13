@@ -81,6 +81,20 @@ function correlationPenalty(legs: CandidateLeg[]): number {
   return penalty;
 }
 
+export function composeSgmMulti(
+  gameMeta: {
+    gameId: number;
+    matchup: string;
+    venue: string;
+    round: number;
+    sportsbetLink?: string;
+    bookmakerLabel?: string;
+  },
+  legs: CandidateLeg[],
+): SgmMulti {
+  return buildMulti(gameMeta, legs);
+}
+
 function buildMulti(
   gameMeta: {
     gameId: number;

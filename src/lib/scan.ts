@@ -16,10 +16,12 @@ import type {
   LadderEntry,
   ScanRequest,
   ScanResult,
+  SgmMulti,
   TeamInsOuts,
   WeatherSnapshot,
 } from "./types";
 import { generateLegsForGame } from "./engine/legs";
+import { buildBestFormMulti } from "./engine/best-form";
 import { predictMatch } from "./engine/predict";
 import { deepScanGame } from "./engine/scanner";
 import { getWeatherForFixture } from "./weather";
@@ -199,11 +201,13 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
   const mode = req.mode;
   const maxResults = req.maxResults ?? 12;
-  const allMultis = [];
+  const allMultis: SgmMulti[] = [];
+  const allBest: SgmMulti[] = [];
   let candidatesEvaluated = 0;
   let combinationsChecked = 0;
   let gamesSkippedNoBoard = 0;
   let gamesSkippedSparsePrices = 0;
+  let bestBuilt = 0;
   const scanNotes: string[] = [
     "Live fixtures & ladder via Squiggle API",
     "Kickoff weather via Open-Meteo (venue forecast)",
@@ -275,6 +279,20 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     candidatesEvaluated += scanned.candidatesEvaluated;
     combinationsChecked += scanned.combinationsChecked;
     allMultis.push(...scanned.multis);
+
+    // BEST: variable-leg multi from Sportsbet player props with 100% recent form
+    const best = buildBestFormMulti({
+      game,
+      legs,
+      sportsbetLink: board?.eventLink,
+      bookmakerLabel: book.label,
+      // Prefer book-priced props; if board is thin, still try with model locks
+      requireSportsbet: !!board,
+    });
+    if (best) {
+      allBest.push(best);
+      bestBuilt += 1;
+    }
   }
 
   const minConf = Math.min(0.95, Math.max(0, req.minConfidence ?? 0));
@@ -355,6 +373,10 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     );
   }
 
+  scanNotes.push(
+    `BEST multis: ${bestBuilt}/${selected.length} games had ≥2 player props at 100% last 4–5 games${boardNoteSuffix(book.shortLabel)}`,
+  );
+
   return {
     generatedAt: new Date().toISOString(),
     mode,
@@ -372,6 +394,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     candidatesEvaluated,
     combinationsChecked,
     multis,
+    bestMultis: allBest,
     scanNotes,
     sportsbet: {
       ...sportsbetStatus,
@@ -380,6 +403,10 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       bookmakerShort: book.shortLabel,
     },
   };
+}
+
+function boardNoteSuffix(shortLabel: string): string {
+  return ` (prefer live ${shortLabel} markets)`;
 }
 
 export function sportsbetStatusOnly(bookmakerId?: string) {

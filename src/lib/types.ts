@@ -232,6 +232,8 @@ export interface ScanResult {
   candidatesEvaluated: number;
   combinationsChecked: number;
   multis: SgmMulti[];
+  /** One form-lock multi per game (100% last 4–5 games, book player props) */
+  bestMultis: SgmMulti[];
   scanNotes: string[];
   sportsbet?: {
     configured: boolean;

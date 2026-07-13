@@ -7,15 +7,15 @@ import {
   getBookmaker,
   type BookmakerId,
 } from "@/lib/bookmakers";
-import type { ScanResult } from "@/lib/types";
-import { formatOdds } from "@/lib/engine/odds";
 import {
   formatAud,
   PAPER_DEFAULT_STAKE,
 } from "@/lib/paper-bankroll";
 import { createSavedSgm } from "@/lib/saved-sgm";
 import { formatSgmForBookmaker } from "@/lib/sgm-export";
+import type { ScanResult, SgmMulti } from "@/lib/types";
 import { SavedSgmsSection, useSavedSgmIds } from "./components/SavedSgms";
+import { SgmMultiCard } from "./components/SgmMultiCard";
 
 interface FixtureCard {
   id: number;
@@ -56,12 +56,6 @@ function formatMatchDate(date: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function confidenceTone(c: number) {
-  if (c >= 0.62) return "text-[#111] bg-[var(--orange)]";
-  if (c >= 0.48) return "text-[var(--orange)] bg-[var(--flood-soft)]";
-  return "text-[#ffb4a0] bg-[#3a2420]";
 }
 
 export default function HomePage() {
@@ -192,6 +186,25 @@ export default function HomePage() {
     setSelectedGames((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  }
+
+  function placePaperBet(m: SgmMulti) {
+    setPaperError(null);
+    try {
+      const saved = createSavedSgm(m, {
+        bookmaker: resultBook.id,
+        bookmakerLabel: resultBook.label,
+        stake: paperStake,
+      });
+      saveMulti(saved);
+      setSaveFlash(m.id);
+      setTimeout(() => setSaveFlash(null), 2000);
+      document.getElementById("saved")?.scrollIntoView({ behavior: "smooth" });
+    } catch (e) {
+      setPaperError(
+        e instanceof Error ? e.message : "Could not place paper bet",
+      );
+    }
   }
 
   function runScan() {
@@ -899,221 +912,90 @@ export default function HomePage() {
               </p>
             )}
 
+            {(result.bestMultis?.length ?? 0) > 0 && (
+              <div className="mb-10">
+                <div className="mb-4">
+                  <h3
+                    className="font-[family-name:var(--font-teko)] text-3xl text-[var(--orange)]"
+                    style={{ fontWeight: 600 }}
+                  >
+                    BEST per game
+                  </h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    Player props that cleared in every one of the last 4–5
+                    games — live {resultBook.label} markets when available.
+                    Leg count varies with how many locks each fixture has.
+                  </p>
+                </div>
+                <div className="grid gap-4">
+                  {result.bestMultis.map((m) => (
+                    <SgmMultiCard
+                      key={m.id}
+                      multi={m}
+                      indexLabel={`${m.legs.length}-leg BEST`}
+                      book={resultBook}
+                      badge="100% recent form"
+                      paperStake={paperStake}
+                      availableCash={availableCash}
+                      saved={savedIds.has(m.id)}
+                      saveFlash={saveFlash === m.id}
+                      copyFlash={copyFlash === m.id}
+                      onCopy={async () => {
+                        try {
+                          await navigator.clipboard.writeText(
+                            formatSgmForBookmaker(m, resultBook.label),
+                          );
+                          setCopyFlash(m.id);
+                          setTimeout(() => setCopyFlash(null), 2000);
+                        } catch {
+                          setCopyFlash(null);
+                        }
+                      }}
+                      onPlace={() => placePaperBet(m)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mb-4">
+              <h3
+                className="font-[family-name:var(--font-teko)] text-3xl text-[var(--turf)]"
+                style={{ fontWeight: 600 }}
+              >
+                Target builds
+              </h3>
+              <p className="text-sm text-[var(--muted)]">
+                Ranked SGMs near your ~${result.target.targetOdds} target with
+                the max per-leg / max-legs caps.
+              </p>
+            </div>
+
             <div className="grid gap-4">
               {result.multis.map((m, idx) => (
-                <article
+                <SgmMultiCard
                   key={m.id}
-                  className="animate-rise border border-[var(--line)] bg-[var(--bg-panel)] p-5 md:p-6"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-                        #{idx + 1} · Round {m.round} · {m.venue}
-                      </p>
-                      <h3
-                        className="font-[family-name:var(--font-teko)] text-3xl text-[var(--ink)]"
-                        style={{ fontWeight: 600 }}
-                      >
-                        {m.matchup}
-                      </h3>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className="font-[family-name:var(--font-teko)] text-4xl text-[var(--leather)]"
-                        style={{ fontWeight: 600 }}
-                      >
-                        {formatOdds(m.combinedOdds)}
-                      </p>
-                      <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
-                        <span
-                          className={`inline-block px-2 py-1 text-xs font-semibold ${confidenceTone(m.confidence)}`}
-                          title="Average estimated hit-rate of the legs, minus a correlation haircut"
-                        >
-                          {(m.confidence * 100).toFixed(0)}% confidence
-                        </span>
-                        {m.sportsbetCoverage > 0 && (
-                          <span className="inline-block bg-[var(--orange)] px-2 py-1 text-xs font-semibold text-[#111]">
-                            {resultBook.shortLabel}{" "}
-                            {Math.round(m.sportsbetCoverage * 100)}%
-                            {m.sportsbetCombinedOdds != null
-                              ? ` · ${formatOdds(m.sportsbetCombinedOdds)}`
-                              : ""}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-                        {m.sportsbetLink && (
-                          <a
-                            href={m.sportsbetLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-[var(--leather)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
-                          >
-                            Open match on {resultBook.label}
-                          </a>
-                        )}
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(
-                                formatSgmForBookmaker(m, resultBook.label),
-                              );
-                              setCopyFlash(m.id);
-                              setTimeout(() => setCopyFlash(null), 2000);
-                            } catch {
-                              setCopyFlash(null);
-                            }
-                          }}
-                          className="border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
-                          title="Books don't allow auto-loading a full SGM slip — copy the checklist and rebuild it on the match page"
-                        >
-                          {copyFlash === m.id ? "Copied ✓" : "Copy for bet slip"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPaperError(null);
-                            try {
-                              const saved = createSavedSgm(m, {
-                                bookmaker: resultBook.id,
-                                bookmakerLabel: resultBook.label,
-                                stake: paperStake,
-                              });
-                              saveMulti(saved);
-                              setSaveFlash(m.id);
-                              setTimeout(() => setSaveFlash(null), 2000);
-                              document
-                                .getElementById("saved")
-                                ?.scrollIntoView({ behavior: "smooth" });
-                            } catch (e) {
-                              setPaperError(
-                                e instanceof Error
-                                  ? e.message
-                                  : "Could not place paper bet",
-                              );
-                            }
-                          }}
-                          disabled={paperStake > availableCash + 1e-9}
-                          className={`px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                            savedIds.has(m.id) || saveFlash === m.id
-                              ? "bg-[var(--orange)] text-[#111]"
-                              : "border border-[var(--orange)] text-[var(--orange)] hover:bg-[var(--flood-soft)]"
-                          }`}
-                        >
-                          {savedIds.has(m.id) || saveFlash === m.id
-                            ? "Bet placed ✓"
-                            : `Place paper bet · ${formatAud(paperStake)}`}
-                        </button>
-                      </div>
-                      <p className="mt-2 max-w-xs text-right text-[10px] leading-snug text-[var(--muted)]">
-                        Paper only — to return{" "}
-                        {formatAud(paperStake * m.combinedOdds)}. One-click SGM
-                        slips aren&apos;t offered by AU books; open the match to
-                        rebuild live.
-                      </p>
-                    </div>
-                  </div>
-
-                  <ol className="mt-4 space-y-2">
-                    {m.legs.map((leg, i) => (
-                      <li
-                        key={leg.id}
-                        className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] pb-2 text-sm last:border-0"
-                      >
-                        <span className="font-medium text-[var(--ink)]">
-                          <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
-                          {leg.label}
-                          {leg.sportsbetOdds != null && (
-                            <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#111]">
-                              {resultBook.shortLabel}
-                              {leg.sportsbetSelection
-                                ? ` · ${leg.sportsbetSelection}`
-                                : ""}
-                            </span>
-                          )}
-                        </span>
-                        <span className="flex items-center gap-2 text-[var(--muted)]">
-                          {leg.sportsbetOdds != null ? (
-                            <>
-                              <span className="font-semibold text-[var(--turf)]">
-                                {resultBook.shortLabel}{" "}
-                                {formatOdds(leg.sportsbetOdds)}
-                              </span>
-                              <span className="ml-1">
-                                · {(leg.confidence * 100).toFixed(0)}%
-                              </span>
-                              {leg.modelOdds != null &&
-                                Math.abs(leg.modelOdds - leg.sportsbetOdds) >
-                                  0.02 && (
-                                  <span className="ml-2 text-xs">
-                                    model {formatOdds(leg.modelOdds)}
-                                  </span>
-                                )}
-                            </>
-                          ) : (
-                            <>
-                              {formatOdds(leg.odds)} ·{" "}
-                              {(leg.confidence * 100).toFixed(0)}%
-                            </>
-                          )}
-                          {leg.sportsbetLink && (
-                            <a
-                              href={leg.sportsbetLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[10px] font-semibold uppercase tracking-wide text-[var(--orange)] hover:underline"
-                              title={`Open this market on ${resultBook.label}`}
-                            >
-                              Open
-                            </a>
-                          )}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-
-                  {m.rationale.length > 0 && (
-                    <ul className="mt-4 space-y-1 text-xs text-[var(--muted)]">
-                      {m.rationale.map((r) => (
-                        <li key={r}>→ {r}</li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <details className="mt-4">
-                    <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-[var(--turf)]">
-                      Factor breakdown
-                    </summary>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      {m.legs.map((leg) => (
-                        <div key={leg.id} className="bg-black/25 p-3">
-                          <p className="text-sm font-semibold text-[var(--ink)]">
-                            {leg.shortLabel}
-                          </p>
-                          <ul className="mt-2 space-y-1">
-                            {leg.factors.map((f) => (
-                              <li key={f.key + f.detail} className="text-xs text-[var(--muted)]">
-                                <span
-                                  className={
-                                    f.impact === "positive"
-                                      ? "text-[var(--turf)]"
-                                      : f.impact === "negative"
-                                        ? "text-[var(--leather)]"
-                                        : ""
-                                  }
-                                >
-                                  {f.label}
-                                </span>
-                                : {f.detail}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                </article>
+                  multi={m}
+                  indexLabel={`#${idx + 1}`}
+                  book={resultBook}
+                  paperStake={paperStake}
+                  availableCash={availableCash}
+                  saved={savedIds.has(m.id)}
+                  saveFlash={saveFlash === m.id}
+                  copyFlash={copyFlash === m.id}
+                  onCopy={async () => {
+                    try {
+                      await navigator.clipboard.writeText(
+                        formatSgmForBookmaker(m, resultBook.label),
+                      );
+                      setCopyFlash(m.id);
+                      setTimeout(() => setCopyFlash(null), 2000);
+                    } catch {
+                      setCopyFlash(null);
+                    }
+                  }}
+                  onPlace={() => placePaperBet(m)}
+                />
               ))}
             </div>
 
