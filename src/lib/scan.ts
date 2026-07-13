@@ -312,7 +312,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     scanNotes.push(`Target construction: ${req.legCount ?? 3}-leg same game multis`);
   } else {
     scanNotes.push(
-      `Target price band around $${req.targetOdds ?? 10} · max 25 legs · each leg ≤ $${legCap.toFixed(2)}`,
+      `Target price band around $${req.targetOdds ?? 10} · max ${req.legCount ?? 6} legs · each leg ≤ $${legCap.toFixed(2)}`,
     );
   }
   if (minConf > 0) {

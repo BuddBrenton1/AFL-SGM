@@ -201,6 +201,7 @@ export type ScanMode = "legs" | "odds";
 
 export interface ScanRequest {
   mode: ScanMode;
+  /** Exact leg count (legs mode) or max legs (target-odds mode) */
   legCount?: number;
   targetOdds?: number;
   /** Max decimal price per leg in target-odds mode (default 1.35) */

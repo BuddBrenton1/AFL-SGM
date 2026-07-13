@@ -361,14 +361,16 @@ function enumerateCombos(
 
 /**
  * Build SGMs toward a target price using only short legs (≤ maxSinglePrice),
- * up to MAX_LEGS. Greedy product chase + a few start variants.
+ * up to maxLegs. Greedy product chase + a few start variants.
  */
 function buildTowardTargetPrice(
   pool: CandidateLeg[],
   target: number,
   maxSinglePrice: number,
   maxResults: number,
+  maxLegs: number = MAX_LEGS,
 ): { combos: CandidateLeg[][]; checked: number } {
+  const legCap = Math.min(MAX_LEGS, Math.max(MIN_LEGS, maxLegs));
   const shortPool = pool
     .filter((l) => l.odds <= maxSinglePrice + 1e-9)
     .sort((a, b) => legEdge(b) - legEdge(a) || a.odds - b.odds);
@@ -388,7 +390,7 @@ function buildTowardTargetPrice(
       checked++;
     }
 
-    while (picked.length < MAX_LEGS && product < target * 0.98) {
+    while (picked.length < legCap && product < target * 0.98) {
       let best: CandidateLeg | null = null;
       let bestScore = -Infinity;
 
@@ -459,6 +461,10 @@ export function deepScanGame(opts: {
   round: number;
   legs: CandidateLeg[];
   mode: ScanMode;
+  /**
+   * Legs mode: exact leg count.
+   * Target-odds mode: maximum legs allowed (default 6).
+   */
   legCount?: number;
   targetOdds?: number;
   maxResults?: number;
@@ -471,10 +477,9 @@ export function deepScanGame(opts: {
   const { mode, maxResults = 8 } = opts;
   const maxSingle =
     opts.maxSingleLegPrice != null ? opts.maxSingleLegPrice : MAX_SINGLE_LEG_PRICE;
-  const requested =
-    mode === "legs"
-      ? Math.min(MAX_LEGS, Math.max(MIN_LEGS, opts.legCount ?? 3))
-      : 0;
+  const requested = Math.min(MAX_LEGS, Math.max(MIN_LEGS, opts.legCount ?? 3));
+  /** In target-odds mode, legCount is the max legs allowed */
+  const maxLegs = mode === "odds" ? requested : MAX_LEGS;
 
   // When bookmaker-only, drop model-only candidates up front
   const sourceLegs = opts.requireSportsbet
@@ -490,7 +495,7 @@ export function deepScanGame(opts: {
     bookmakerLabel: opts.bookmakerLabel,
   };
 
-  // Target-price mode: short legs only (user max per-leg price), up to 25 legs
+  // Target-price mode: short legs only (user max per-leg price), capped leg count
   if (mode === "odds" && opts.targetOdds) {
     const target = opts.targetOdds;
     let effectiveMax = maxSingle;
@@ -498,7 +503,7 @@ export function deepScanGame(opts: {
 
     // Live book props are often longer than Bounce model shorts — relax the cap
     // rather than returning an empty card when "prices only" is on.
-    if (shortLegs.length < Math.max(4, requested || 4)) {
+    if (shortLegs.length < Math.max(4, maxLegs)) {
       for (const bump of [1.5, 1.65, 1.8, 2.0, 2.2, 2.5]) {
         if (bump <= effectiveMax + 1e-9) continue;
         const next = sourceLegs.filter((l) => l.odds <= bump + 1e-9);
@@ -520,6 +525,7 @@ export function deepScanGame(opts: {
       target,
       effectiveMax,
       maxResults,
+      maxLegs,
     );
 
     let combinationsChecked = checked;
@@ -527,11 +533,15 @@ export function deepScanGame(opts: {
 
     for (const combo of combos) {
       if (combo.some((l) => l.odds > effectiveMax + 1e-9)) continue;
+      if (combo.length > maxLegs) continue;
       if (hasConflicts(combo)) continue;
       multis.push(buildMulti(gameMeta, combo));
     }
 
-    for (const k of [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 22, 25]) {
+    const fixedSizes = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 22, 25].filter(
+      (k) => k <= maxLegs,
+    );
+    for (const k of fixedSizes) {
       if (k > pool.length) continue;
       const { combos: fixed, checked: c } = enumerateCombos(pool, k, maxResults);
       combinationsChecked += c;
@@ -544,7 +554,7 @@ export function deepScanGame(opts: {
 
     const filtered = multis
       .filter((m) => m.legs.every((l) => l.odds <= effectiveMax + 1e-9))
-      .filter((m) => m.legs.length <= MAX_LEGS)
+      .filter((m) => m.legs.length <= maxLegs)
       .map((m) => ({
         multi: m,
         dist:
@@ -561,12 +571,12 @@ export function deepScanGame(opts: {
           a.multi.edgeScore -
           a.dist * 1.4 +
           a.multi.sportsbetCoverage * 0.1 -
-          Math.max(0, a.multi.legs.length - 18) * 0.01;
+          Math.max(0, a.multi.legs.length - Math.max(6, maxLegs - 2)) * 0.01;
         const scoreB =
           b.multi.edgeScore -
           b.dist * 1.4 +
           b.multi.sportsbetCoverage * 0.1 -
-          Math.max(0, b.multi.legs.length - 18) * 0.01;
+          Math.max(0, b.multi.legs.length - Math.max(6, maxLegs - 2)) * 0.01;
         return scoreB - scoreA;
       })
       .map((x) => x.multi);
@@ -584,9 +594,9 @@ export function deepScanGame(opts: {
       });
       if (tooClose) continue;
       if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) continue;
-      if (!m.rationale.some((r) => r.includes("max single"))) {
+      if (!m.rationale.some((r) => r.includes("max single") || r.includes("Target-price"))) {
         m.rationale.push(
-          `Target-price rule: max ${MAX_LEGS} legs, each ≤ $${effectiveMax.toFixed(2)}${
+          `Target-price rule: max ${maxLegs} legs, each ≤ $${effectiveMax.toFixed(2)}${
             effectiveMax > maxSingle + 1e-9
               ? ` (relaxed from $${maxSingle.toFixed(2)} for live prices)`
               : ""

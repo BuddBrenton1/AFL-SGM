@@ -36,6 +36,13 @@ export async function POST(request: Request) {
           { status: 400 },
         );
       }
+      const maxLegs = Number(body.legCount ?? 6);
+      if (!Number.isFinite(maxLegs) || maxLegs < 2 || maxLegs > 25) {
+        return NextResponse.json(
+          { error: "Max legs must be between 2 and 25" },
+          { status: 400 },
+        );
+      }
       if (body.maxSingleLegPrice != null) {
         const cap = Number(body.maxSingleLegPrice);
         if (!Number.isFinite(cap) || cap < 1.05 || cap > 3) {
@@ -59,7 +66,7 @@ export async function POST(request: Request) {
 
     const result = await runDeepScan({
       mode,
-      legCount: body.legCount ? Number(body.legCount) : 3,
+      legCount: body.legCount ? Number(body.legCount) : mode === "odds" ? 6 : 3,
       targetOdds: body.targetOdds ? Number(body.targetOdds) : 10,
       maxSingleLegPrice: body.maxSingleLegPrice
         ? Number(body.maxSingleLegPrice)

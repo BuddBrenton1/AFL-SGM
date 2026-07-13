@@ -66,7 +66,7 @@ export default function HomePage() {
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("legs");
-  const [legCount, setLegCount] = useState(3);
+  const [legCount, setLegCount] = useState(6);
   const [targetOdds, setTargetOdds] = useState(12);
   const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.35);
   const [minConfidencePct, setMinConfidencePct] = useState(0);
@@ -507,6 +507,47 @@ export default function HomePage() {
 
                 <label className="block">
                   <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    Max legs
+                  </span>
+                  <div className="mt-2 flex items-center gap-4">
+                    <input
+                      type="range"
+                      min={2}
+                      max={25}
+                      value={legCount}
+                      onChange={(e) => setLegCount(Number(e.target.value))}
+                      className="w-full accent-[var(--leather)]"
+                    />
+                    <span
+                      className="font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
+                      style={{ fontWeight: 600 }}
+                    >
+                      {legCount}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {[3, 4, 5, 6, 8, 10, 12].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setLegCount(v)}
+                        className={`px-2.5 py-1 text-xs font-semibold ${
+                          legCount === v
+                            ? "bg-[var(--orange)] text-[#111]"
+                            : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
+                        }`}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-[var(--muted)]">
+                    Cap how many legs the target-price builder can stack.
+                  </p>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
                     Max price per leg
                   </span>
                   <div className="mt-2 flex items-center gap-4">
@@ -545,7 +586,7 @@ export default function HomePage() {
                     ))}
                   </div>
                   <p className="mt-2 text-xs text-[var(--muted)]">
-                    Builds up to 25 legs. Only includes legs at or under this price.
+                    Only includes legs at or under this price (up to {legCount} legs).
                   </p>
                 </label>
               </div>
@@ -849,7 +890,7 @@ export default function HomePage() {
               <span>
                 Mode: {result.mode === "legs"
                   ? `${result.target.legCount} legs`
-                  : `~$${result.target.targetOdds} · legs ≤ $${(result.target.maxSingleLegPrice ?? 1.35).toFixed(2)}`}
+                  : `~$${result.target.targetOdds} · ≤${result.target.legCount ?? 6} legs · each ≤ $${(result.target.maxSingleLegPrice ?? 1.35).toFixed(2)}`}
               </span>
               {(result.target.minConfidence ?? 0) > 0 && (
                 <span>
