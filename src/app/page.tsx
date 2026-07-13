@@ -595,20 +595,17 @@ export default function HomePage() {
                 type="button"
                 onClick={runScan}
                 disabled={scanning || isPending || !selectedGames.length}
-                className="relative mt-auto overflow-hidden bg-[var(--orange)] px-6 py-4 text-left text-[#111] transition enabled:hover:bg-[var(--orange-hot)] disabled:opacity-60"
+                className="btn-scan mt-auto"
               >
-                <span
-                  className="font-[family-name:var(--font-teko)] text-3xl leading-none"
-                  style={{ fontWeight: 600 }}
-                >
-                  {scanning || isPending ? "Scanning fixtures…" : "Run deep scan"}
+                <span className="btn-scan-label">
+                  {scanning || isPending ? "Scanning…" : "Find multis"}
                 </span>
-                <p className="mt-1 text-xs text-black/70">
+                <span className="btn-scan-meta">
                   ~${targetOdds} · ≤{legCount} legs · ≤${maxSingleLegPrice.toFixed(2)} ·{" "}
                   {minConfidencePct === 0 ? "any conf" : `${minConfidencePct}%+`}
-                </p>
+                </span>
                 {(scanning || isPending) && (
-                  <span className="scan-bar absolute bottom-0 left-0 right-0 h-1 bg-[var(--flood)]" />
+                  <span className="scan-bar absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--orange)]" />
                 )}
               </button>
               {scanError && (

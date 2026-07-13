@@ -192,6 +192,56 @@ body {
   color: var(--orange);
 }
 
+.btn-scan {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 140, 0, 0.45);
+  background: linear-gradient(165deg, rgba(255, 140, 0, 0.08), rgba(255, 140, 0, 0.02));
+  color: var(--ink);
+  padding: 1rem 1.25rem;
+  text-align: left;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.btn-scan:hover:enabled {
+  border-color: var(--orange);
+  background: linear-gradient(165deg, rgba(255, 140, 0, 0.16), rgba(255, 140, 0, 0.05));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-scan:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-scan-label {
+  font-family: var(--font-teko), system-ui, sans-serif;
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--orange);
+}
+
+.btn-scan:hover:enabled .btn-scan-label {
+  color: var(--orange-hot);
+}
+
+.btn-scan-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .nav-link {
   color: var(--muted-strong);
   font-size: 0.8rem;
