@@ -10,6 +10,10 @@ import { composeSgmMulti, legPrice } from "./scanner";
 
 export const BEST_FORM_GAMES = 5;
 export const BEST_FORM_MIN_GAMES = 4;
+/** Book must price BEST legs as shorts — long prices are not locks. */
+export const BEST_MAX_LEG_PRICE = 1.4;
+/** Season milestone hit-rate floor when we have a rate for that line. */
+export const BEST_MIN_SEASON_HIT_RATE = 0.85;
 
 function recentValues(
   form: PlayerSeasonForm,
@@ -29,13 +33,29 @@ function recentValues(
   }
 }
 
+function seasonHitRate(
+  form: PlayerSeasonForm,
+  market: MarketType,
+  threshold: number,
+): number | null {
+  const key = `${threshold}+`;
+  if (market === "player_goal") {
+    const rate = form.goalHitRates[key];
+    return typeof rate === "number" ? rate : null;
+  }
+  if (market === "player_disposal") {
+    const rate = form.disposalHitRates[key];
+    return typeof rate === "number" ? rate : null;
+  }
+  return null;
+}
+
 /** True if the player cleared the threshold in every one of the last N games. */
 export function hitEveryRecentGame(
   values: number[],
   threshold: number,
   n: number = BEST_FORM_GAMES,
-): { ok: boolean; games: number; values: number[] } {
-  const slice = values.slice(-Math.max(n, BEST_FORM_MIN_GAMES));
+): { ok: boolean; games: number; hits: number; values: number[] } {
   const useN =
     values.length >= n
       ? n
@@ -43,12 +63,14 @@ export function hitEveryRecentGame(
         ? BEST_FORM_MIN_GAMES
         : 0;
   if (useN < BEST_FORM_MIN_GAMES) {
-    return { ok: false, games: values.length, values: slice };
+    return { ok: false, games: values.length, hits: 0, values: values.slice(-n) };
   }
   const window = values.slice(-useN);
+  const hits = window.filter((v) => v >= threshold).length;
   return {
-    ok: window.every((v) => v >= threshold),
+    ok: hits === window.length,
     games: window.length,
+    hits,
     values: window,
   };
 }
@@ -77,19 +99,27 @@ function findPlayer(
  * Player props available on the book that the athlete has cleared in
  * every recent game (last 4–5). Prefers the highest threshold still
  * sitting at 100% recent form for each player+market.
+ *
+ * Extra gates (stops stale seed form looking like locks):
+ * - Live book price must be short (≤ $1.40)
+ * - Season hit-rate for that milestone must be ≥ 85% when known
  */
 export function collectBestFormLegs(
   legs: CandidateLeg[],
   game: EnrichedGame,
-  opts?: { requireSportsbet?: boolean },
+  opts?: { requireSportsbet?: boolean; maxLegPrice?: number },
 ): CandidateLeg[] {
   const requireSb = opts?.requireSportsbet !== false;
+  const maxPrice = opts?.maxLegPrice ?? BEST_MAX_LEG_PRICE;
   const locks: CandidateLeg[] = [];
 
   for (const leg of legs) {
     if (!isPlayerPropMarket(leg.market)) continue;
     if (leg.threshold == null || !leg.playerId) continue;
     if (requireSb && leg.sportsbetOdds == null) continue;
+
+    const price = legPrice(leg);
+    if (!(price <= maxPrice + 1e-9)) continue;
 
     const player = findPlayer(leg, game);
     if (!player) continue;
@@ -100,15 +130,24 @@ export function collectBestFormLegs(
     const hit = hitEveryRecentGame(recent, leg.threshold, BEST_FORM_GAMES);
     if (!hit.ok) continue;
 
+    const seasonRate = seasonHitRate(player.form, leg.market, leg.threshold);
+    if (seasonRate != null && seasonRate < BEST_MIN_SEASON_HIT_RATE - 1e-9) {
+      continue;
+    }
+
     const annotated: CandidateLeg = {
       ...leg,
       factors: [
-        ...leg.factors,
+        ...leg.factors.filter((f) => f.key !== "best-form"),
         {
           key: "best-form",
           label: "Recent form",
           impact: "positive",
-          detail: `Hit ${leg.threshold}+ in all last ${hit.games} games (${hit.values.join(", ")})`,
+          detail: `L${hit.games} ${hit.hits}/${hit.games} · cleared ${leg.threshold}+ every game (${hit.values.join(", ")})${
+            seasonRate != null
+              ? ` · season ${(seasonRate * 100).toFixed(0)}%`
+              : ""
+          }`,
           weight: 0.05,
         },
       ],
@@ -208,10 +247,13 @@ export function buildBestFormMulti(opts: {
   multi.id = `best:${multi.id}`;
   multi.rationale = [
     `BEST · ${picked.length} legs · each hit in all last ${BEST_FORM_MIN_GAMES}–${BEST_FORM_GAMES} games`,
+    `Each leg ≤ $${BEST_MAX_LEG_PRICE.toFixed(2)} on the book (shorts only)`,
     opts.requireSportsbet !== false
       ? `Live ${opts.bookmakerLabel ?? "book"} player props only`
       : "Player props (book prices when matched)",
-    ...multi.rationale.filter((r) => !r.startsWith("BEST ·")),
+    ...multi.rationale.filter(
+      (r) => !r.startsWith("BEST ·") && !r.startsWith("Each leg ≤"),
+    ),
   ];
   multi.edgeScore += 0.15;
   return multi;

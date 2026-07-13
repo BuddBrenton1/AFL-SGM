@@ -142,10 +142,20 @@ export const PLAYERS: PlayerProfile[] = [
   // Geelong
   p("gee-cameron", "Jeremy Cameron", "geelong", "key-forward", 5, form({ goalsAvg: 2.6, disposalsAvg: 14, marksAvg: 7, last5Goals: [3, 4, 2, 3, 2], goalHitRates: { "1+": 0.94, "2+": 0.78, "3+": 0.5 } })),
   p("gee-close", "Brad Close", "geelong", "medium-forward", 45, form({ goalsAvg: 1.3, disposalsAvg: 16 })),
-  p("gee-danger", "Patrick Dangerfield", "geelong", "midfielder", 35, form({ goalsAvg: 0.8, disposalsAvg: 24, last5Disposals: [26, 20, 28, 22, 25] }), 0.78),
+  p("gee-danger", "Patrick Dangerfield", "geelong", "midfielder", 35, form({
+    goalsAvg: 0.8,
+    disposalsAvg: 22,
+    last5Disposals: [28, 15, 19, 17, 22],
+    disposalHitRates: { "15+": 0.72, "20+": 0.3, "25+": 0.12, "30+": 0.04 },
+  }), 0.78),
   p("gee-stewart", "Tom Stewart", "geelong", "defender", 44, form({ goalsAvg: 0.1, disposalsAvg: 22, marksAvg: 7 })),
   p("gee-manning", "Tyson Stengle", "geelong", "medium-forward", 18, form({ goalsAvg: 1.9, disposalsAvg: 13, last5Goals: [2, 3, 1, 2, 2] })),
-  p("gee-holmes", "Max Holmes", "geelong", "midfielder", 9, form({ goalsAvg: 0.6, disposalsAvg: 25 })),
+  p("gee-holmes", "Max Holmes", "geelong", "midfielder", 9, form({
+    goalsAvg: 0.6,
+    disposalsAvg: 27,
+    last5Disposals: [31, 26, 29, 24, 28],
+    disposalHitRates: { "15+": 0.98, "20+": 0.94, "25+": 0.78, "30+": 0.35 },
+  })),
 
   // Western Bulldogs
   p("wbd-bont", "Marcus Bontempelli", "westernbulldogs", "midfielder", 4, form({ goalsAvg: 1.0, disposalsAvg: 29, last5Disposals: [31, 27, 33, 26, 30], last5Goals: [1, 2, 0, 1, 2] })),

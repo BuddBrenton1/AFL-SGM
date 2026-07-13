@@ -137,6 +137,13 @@ export function SgmMultiCard(props: {
                   {leg.sportsbetSelection ? ` · ${leg.sportsbetSelection}` : ""}
                 </span>
               )}
+              {leg.factors.some((f) => f.key === "best-form") && (
+                <span className="ml-2 border border-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--orange)]">
+                  {leg.factors
+                    .find((f) => f.key === "best-form")
+                    ?.detail.match(/^L\d+\s+\d+\/\d+/)?.[0] ?? "L5 lock"}
+                </span>
+              )}
             </span>
             <span className="flex items-center gap-2 text-[var(--muted)]">
               {leg.sportsbetOdds != null ? (

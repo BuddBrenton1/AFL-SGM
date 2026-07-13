@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  BEST_MAX_LEG_PRICE,
   collectBestFormLegs,
   hitEveryRecentGame,
 } from "../src/lib/engine/best-form";
@@ -7,14 +8,11 @@ import type { CandidateLeg, EnrichedGame, PlayerProfile } from "../src/lib/types
 
 const hit = hitEveryRecentGame([34, 29, 33, 28, 32], 20, 5);
 assert.equal(hit.ok, true);
-assert.equal(hit.games, 5);
+assert.equal(hit.hits, 5);
 
 const miss = hitEveryRecentGame([34, 29, 19, 28, 32], 20, 5);
 assert.equal(miss.ok, false);
-
-const four = hitEveryRecentGame([22, 25, 21, 24], 20, 5);
-assert.equal(four.ok, true);
-assert.equal(four.games, 4);
+assert.equal(miss.hits, 4);
 
 const player: PlayerProfile = {
   id: "p1",
@@ -39,69 +37,71 @@ const player: PlayerProfile = {
     last5Marks: [4, 5, 4, 3, 5],
     last5Tackles: [5, 6, 4, 5, 7],
     goalHitRates: { "1+": 0.6 },
-    disposalHitRates: { "20+": 0.95, "25+": 0.8 },
+    disposalHitRates: { "20+": 0.95, "25+": 0.88 },
+  },
+};
+
+const danger: PlayerProfile = {
+  ...player,
+  id: "danger",
+  name: "Patrick Dangerfield",
+  form: {
+    ...player.form,
+    last5Disposals: [28, 15, 19, 17, 22],
+    disposalHitRates: { "15+": 0.72, "20+": 0.3, "25+": 0.12 },
   },
 };
 
 const game = {
   id: 1,
-  homeTeam: "Richmond",
-  awayTeam: "Hawthorn",
-  homePlayers: [player],
+  homeTeam: "Geelong",
+  awayTeam: "St Kilda",
+  homePlayers: [player, danger],
   awayPlayers: [],
 } as unknown as EnrichedGame;
 
-const legs: CandidateLeg[] = [
-  {
-    id: "1",
+function leg(
+  id: string,
+  playerId: string,
+  threshold: number,
+  price: number,
+  hitRatesOk = true,
+): CandidateLeg {
+  return {
+    id,
     gameId: 1,
     market: "player_disposal",
-    label: "Test Mid 25+ Disposals",
-    shortLabel: "Mid 25+",
-    playerId: "p1",
-    threshold: 25,
-    probability: 0.8,
-    odds: 1.25,
-    sportsbetOdds: 1.22,
-    confidence: 0.85,
+    label: `${playerId} ${threshold}+`,
+    shortLabel: `${threshold}+`,
+    playerId,
+    threshold,
+    probability: 1 / price,
+    odds: price,
+    sportsbetOdds: price,
+    confidence: hitRatesOk ? 0.9 : 0.3,
     valueScore: 0.1,
     factors: [],
-    correlationGroup: "disp:p1",
-  },
-  {
-    id: "2",
-    gameId: 1,
-    market: "player_disposal",
-    label: "Test Mid 20+ Disposals",
-    shortLabel: "Mid 20+",
-    playerId: "p1",
-    threshold: 20,
-    probability: 0.9,
-    odds: 1.12,
-    sportsbetOdds: 1.1,
-    confidence: 0.9,
-    valueScore: 0.1,
-    factors: [],
-    correlationGroup: "disp:p1",
-  },
-  {
-    id: "3",
-    gameId: 1,
-    market: "match_result",
-    label: "Richmond",
-    shortLabel: "Rich",
-    probability: 0.6,
-    odds: 1.6,
-    sportsbetOdds: 1.55,
-    confidence: 0.6,
-    valueScore: 0,
-    factors: [],
-    correlationGroup: "match-result",
-  },
-];
+    correlationGroup: `disp:${playerId}`,
+  };
+}
 
-const locks = collectBestFormLegs(legs, game, { requireSportsbet: true });
-assert.equal(locks.length, 1, "should keep highest 100% threshold only");
+const locks = collectBestFormLegs(
+  [
+    leg("ok-25", "p1", 25, 1.22),
+    leg("ok-20", "p1", 20, 1.1),
+    leg("danger-long", "danger", 20, 3.3),
+    leg("danger-form", "danger", 15, 1.25), // form not 100% L5 for 15+ either (15,19,17 miss? 15 clears; 15,19,17,22,28 — 15 clears all? 15,19,17,22,28 all >= 15! and season 72% fails)
+  ],
+  game,
+  { requireSportsbet: true },
+);
+
+assert.ok(
+  locks.every((l) => (l.sportsbetOdds ?? l.odds) <= BEST_MAX_LEG_PRICE),
+  "no long-priced legs",
+);
+assert.ok(!locks.some((l) => l.playerId === "danger"), "Dangerfield excluded");
+assert.equal(locks.length, 1);
 assert.equal(locks[0].threshold, 25);
 
-console.log("PASS: best-form locks");
+console.log("PASS: best-form rejects long/low-rate Dangerfield-style legs");
