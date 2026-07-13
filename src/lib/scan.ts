@@ -20,6 +20,7 @@ import type {
   TeamInsOuts,
   WeatherSnapshot,
 } from "./types";
+import { BOUNCE_BUILD, BOUNCE_BUILD_NOTE } from "./build-info";
 import { generateLegsForGame } from "./engine/legs";
 import { buildBestFormMulti, BEST_MAX_LEG_PRICE } from "./engine/best-form";
 import { predictMatch } from "./engine/predict";
@@ -209,6 +210,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   let gamesSkippedNoBoard = 0;
   let gamesSkippedSparsePrices = 0;
   const scanNotes: string[] = [
+    `Bounce build ${BOUNCE_BUILD} — ${BOUNCE_BUILD_NOTE}`,
     "Live fixtures & ladder via Squiggle API",
     "Kickoff weather via Open-Meteo (venue forecast)",
     "Injuries via AFL.com.au official injury list; team sheets via AFL match roster when published",

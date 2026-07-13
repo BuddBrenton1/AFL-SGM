@@ -11,6 +11,7 @@ import {
   formatAud,
   PAPER_DEFAULT_STAKE,
 } from "@/lib/paper-bankroll";
+import { BOUNCE_BUILD } from "@/lib/build-info";
 import { createSavedSgm } from "@/lib/saved-sgm";
 import { formatSgmForBookmaker } from "@/lib/sgm-export";
 import type { ScanResult, SgmMulti } from "@/lib/types";
@@ -923,8 +924,12 @@ export default function HomePage() {
                   </h3>
                   <p className="text-sm text-[var(--muted)]">
                     ESPN last-5 box scores only — a prop must clear in all 5
-                    recent games (no seed guesses, no 4-game partials). Live{" "}
-                    {resultBook.label} shorts preferred.
+                    recent games (no seed guesses, no 4-game partials). Uses
+                    your max per-leg. Build{" "}
+                    <span className="font-semibold text-[var(--orange)]">
+                      {BOUNCE_BUILD}
+                    </span>
+                    .
                   </p>
                 </div>
                 <div className="grid gap-4">
@@ -1042,7 +1047,8 @@ export default function HomePage() {
             BOUNCE
           </p>
           <p className="text-sm text-[var(--muted)]">
-            AFL Same Game Multi scanner · live ladder & fixtures
+            AFL Same Game Multi scanner · live ladder & fixtures · build{" "}
+            {BOUNCE_BUILD}
           </p>
         </div>
       </footer>
