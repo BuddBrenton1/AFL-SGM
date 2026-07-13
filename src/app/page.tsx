@@ -923,8 +923,9 @@ export default function HomePage() {
                   </h3>
                   <p className="text-sm text-[var(--muted)]">
                     Player props that cleared in every one of the last 4–5
-                    games — live {resultBook.label} markets when available.
-                    Leg count varies with how many locks each fixture has.
+                    games (live ESPN box scores when available). Tackle/mark
+                    locks need real form — not disposal guesses. Live{" "}
+                    {resultBook.label} markets preferred.
                   </p>
                 </div>
                 <div className="grid gap-4">

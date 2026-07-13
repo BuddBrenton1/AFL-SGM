@@ -67,6 +67,10 @@ export interface PlayerProfile {
   roleStability: number;
   /** True when marksAvg was supplied (not inferred from disposals). */
   marksExplicit?: boolean;
+  /** True when tackle form was supplied or refreshed from live box scores. */
+  tacklesExplicit?: boolean;
+  /** Where last-5 arrays currently come from */
+  formSource?: "seed" | "espn";
 }
 
 export interface TeamInsOuts {

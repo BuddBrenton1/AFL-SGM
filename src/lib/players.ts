@@ -8,12 +8,15 @@ type FormInput = Partial<PlayerSeasonForm> & {
 type BuiltForm = PlayerSeasonForm & {
   /** False when marksAvg was only inferred from disposals (unreliable for mids). */
   marksExplicit: boolean;
+  /** False when last5Tackles / tacklesAvg were inferred from disposals. */
+  tacklesExplicit: boolean;
 };
 
 function form(partial: FormInput): BuiltForm {
   const g = partial.goalsAvg;
   const d = partial.disposalsAvg;
   const marksExplicit = partial.marksAvg != null;
+  const tacklesExplicit = partial.last5Tackles != null;
   // Contested mids dispose a lot without marking — never invent ~6 marks from 28 disposals.
   const m = partial.marksAvg ?? Math.max(2, Math.min(3.5, d * 0.11));
   const t = partial.tacklesAvg ?? Math.max(2, d * 0.18);
@@ -46,7 +49,8 @@ function form(partial: FormInput): BuiltForm {
     last5Disposals,
     last5Marks:
       partial.last5Marks ?? last5Disposals.map((x) => Math.round(x * 0.11)),
-    last5Tackles: partial.last5Tackles ?? last5Disposals.map((x) => Math.round(x * 0.16)),
+    last5Tackles:
+      partial.last5Tackles ?? last5Disposals.map((x) => Math.round(x * 0.16)),
     goalHitRates: partial.goalHitRates ?? {
       "1+": Math.min(0.95, 0.35 + g * 0.28),
       "2+": Math.min(0.85, 0.12 + g * 0.22),
@@ -59,6 +63,7 @@ function form(partial: FormInput): BuiltForm {
       "30+": Math.min(0.8, Math.max(0.03, (d - 24) * 0.07)),
     },
     marksExplicit,
+    tacklesExplicit,
   };
 }
 
@@ -71,7 +76,7 @@ function p(
   f: BuiltForm,
   roleStability = 0.9,
 ): PlayerProfile {
-  const { marksExplicit, ...seasonForm } = f;
+  const { marksExplicit, tacklesExplicit, ...seasonForm } = f;
   return {
     id,
     name,
@@ -81,6 +86,8 @@ function p(
     form: seasonForm,
     roleStability,
     marksExplicit,
+    tacklesExplicit,
+    formSource: "seed",
   };
 }
 

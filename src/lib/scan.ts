@@ -24,6 +24,7 @@ import { generateLegsForGame } from "./engine/legs";
 import { buildBestFormMulti } from "./engine/best-form";
 import { predictMatch } from "./engine/predict";
 import { deepScanGame } from "./engine/scanner";
+import { applyLiveFormToPlayers, loadLiveFormForTeams } from "./live-form";
 import { getWeatherForFixture } from "./weather";
 import { fetchAflInjuryRows, type AflInjuryRow } from "./afl-injuries";
 import {
@@ -231,9 +232,26 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     );
   }
 
+  const liveForm = await loadLiveFormForTeams(
+    selected.flatMap((g) => [g.homeTeamId, g.awayTeamId]),
+    5,
+  );
+  scanNotes.push(liveForm.message);
+
   for (const game of selected) {
+    const homeLive = applyLiveFormToPlayers(game.homePlayers, liveForm.byName);
+    const awayLive = applyLiveFormToPlayers(game.awayPlayers, liveForm.byName);
+    const gameLive = {
+      ...game,
+      homePlayers: homeLive.players,
+      awayPlayers: awayLive.players,
+    };
+    if (homeLive.matched + awayLive.matched > 0) {
+      // keep quiet per game — aggregate note already added
+    }
+
     const board = lookupSportsbetBoard(byMatchup, game.homeTeam, game.awayTeam);
-    const rawLegs = generateLegsForGame(game);
+    const rawLegs = generateLegsForGame(gameLive);
     let legs = applySportsbetPrices(rawLegs, board, bookmaker);
     let requireBook = false;
 
@@ -242,7 +260,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
         gamesSkippedNoBoard += 1;
         // Still scan with model legs — Odds API often has no board yet
       } else {
-        const boardLegs = legsFromSportsbetBoard(board, game, bookmaker);
+        const boardLegs = legsFromSportsbetBoard(board, gameLive, bookmaker);
         const minLegsNeeded = Math.min(25, Math.max(2, req.legCount ?? 10));
         const livePriced = legs.filter((l) => l.sportsbetOdds != null);
 
@@ -262,10 +280,10 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     }
 
     const scanned = deepScanGame({
-      gameId: game.id,
-      matchup: `${game.homeTeam} vs ${game.awayTeam}`,
-      venue: game.venue,
-      round: game.round,
+      gameId: gameLive.id,
+      matchup: `${gameLive.homeTeam} vs ${gameLive.awayTeam}`,
+      venue: gameLive.venue,
+      round: gameLive.round,
       legs,
       mode,
       legCount: req.legCount,
@@ -282,7 +300,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
     // BEST: variable-leg multi from Sportsbet player props with 100% recent form
     const best = buildBestFormMulti({
-      game,
+      game: gameLive,
       legs,
       sportsbetLink: board?.eventLink,
       bookmakerLabel: book.label,

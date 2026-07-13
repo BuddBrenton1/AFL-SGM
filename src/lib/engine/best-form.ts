@@ -123,8 +123,10 @@ export function collectBestFormLegs(
 
     const player = findPlayer(leg, game);
     if (!player) continue;
-    // Inferred mark lines are noisy — only keep explicit mark form
+    // Inferred mark/tackle lines from disposals are not real form — skip unless
+    // we have explicit seed last-5 or a live ESPN overlay.
     if (leg.market === "player_mark" && !player.marksExplicit) continue;
+    if (leg.market === "player_tackle" && !player.tacklesExplicit) continue;
 
     const recent = recentValues(player.form, leg.market);
     const hit = hitEveryRecentGame(recent, leg.threshold, BEST_FORM_GAMES);
