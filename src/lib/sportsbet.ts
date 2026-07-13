@@ -51,6 +51,8 @@ interface OddsApiOutcome {
 interface OddsApiMarket {
   key: string;
   last_update?: string;
+  /** Deep link to this market on the book, when Odds API provides it */
+  link?: string;
   outcomes: OddsApiOutcome[];
 }
 
@@ -248,7 +250,8 @@ function extractSportsbet(
         description: outcome.description,
         price: outcome.price,
         point: outcome.point,
-        link: outcome.link ?? book.link,
+        // Prefer deepest available deep-link: outcome → market → event
+        link: outcome.link ?? market.link ?? book.link,
       });
     }
   }
@@ -282,7 +285,7 @@ export async function fetchSportsbetFeaturedOdds(
 }> {
   const book = getBookmaker(bookmakerId);
   const { data, remaining } = await oddsFetch(
-    `/sports/${SPORT}/odds?regions=au&bookmakers=${book.apiKey}&markets=${FEATURED_MARKETS}&oddsFormat=decimal`,
+    `/sports/${SPORT}/odds?regions=au&bookmakers=${book.apiKey}&markets=${FEATURED_MARKETS}&oddsFormat=decimal&includeLinks=true`,
   );
   const events = (data as OddsApiEvent[])
     .map((e) => extractSportsbet(e, book.apiKey))
@@ -296,7 +299,7 @@ export async function fetchSportsbetEventProps(
 ): Promise<SportsbetEventOdds | null> {
   const book = getBookmaker(bookmakerId);
   const { data } = await oddsFetch(
-    `/sports/${SPORT}/events/${eventId}/odds?regions=au&bookmakers=${book.apiKey}&markets=${PROP_MARKETS}&oddsFormat=decimal`,
+    `/sports/${SPORT}/events/${eventId}/odds?regions=au&bookmakers=${book.apiKey}&markets=${PROP_MARKETS}&oddsFormat=decimal&includeLinks=true`,
   );
   return extractSportsbet(data as OddsApiEvent, book.apiKey);
 }

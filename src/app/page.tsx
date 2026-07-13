@@ -10,6 +10,7 @@ import {
 import type { ScanResult } from "@/lib/types";
 import { formatOdds } from "@/lib/engine/odds";
 import { createSavedSgm } from "@/lib/saved-sgm";
+import { formatSgmForBookmaker } from "@/lib/sgm-export";
 import { SavedSgmsSection, useSavedSgmIds } from "./components/SavedSgms";
 
 interface FixtureCard {
@@ -96,6 +97,7 @@ export default function HomePage() {
   );
   const { savedIds, saveMulti } = useSavedSgmIds();
   const [saveFlash, setSaveFlash] = useState<string | null>(null);
+  const [copyFlash, setCopyFlash] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -896,17 +898,35 @@ export default function HomePage() {
                           </span>
                         )}
                       </div>
-                      {m.sportsbetLink && (
-                        <a
-                          href={m.sportsbetLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-2 inline-block text-xs font-semibold text-[var(--leather)] underline"
+                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                        {m.sportsbetLink && (
+                          <a
+                            href={m.sportsbetLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-[var(--leather)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
+                          >
+                            Open match on {resultBook.label}
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(
+                                formatSgmForBookmaker(m, resultBook.label),
+                              );
+                              setCopyFlash(m.id);
+                              setTimeout(() => setCopyFlash(null), 2000);
+                            } catch {
+                              setCopyFlash(null);
+                            }
+                          }}
+                          className="border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
+                          title="Books don't allow auto-loading a full SGM slip — copy the checklist and rebuild it on the match page"
                         >
-                          Open on {resultBook.label}
-                        </a>
-                      )}
-                      <div className="mt-3">
+                          {copyFlash === m.id ? "Copied ✓" : "Copy for bet slip"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -929,6 +949,10 @@ export default function HomePage() {
                             : "Save SGM"}
                         </button>
                       </div>
+                      <p className="mt-2 max-w-xs text-right text-[10px] leading-snug text-[var(--muted)]">
+                        One-click SGM slips aren&apos;t offered by AU books —
+                        open the match, then paste/rebuild from the checklist.
+                      </p>
                     </div>
                   </div>
 
@@ -950,7 +974,7 @@ export default function HomePage() {
                             </span>
                           )}
                         </span>
-                        <span className="text-[var(--muted)]">
+                        <span className="flex items-center gap-2 text-[var(--muted)]">
                           {leg.sportsbetOdds != null ? (
                             <>
                               <span className="font-semibold text-[var(--turf)]">
@@ -973,6 +997,17 @@ export default function HomePage() {
                               {formatOdds(leg.odds)} ·{" "}
                               {(leg.confidence * 100).toFixed(0)}%
                             </>
+                          )}
+                          {leg.sportsbetLink && (
+                            <a
+                              href={leg.sportsbetLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] font-semibold uppercase tracking-wide text-[var(--orange)] hover:underline"
+                              title={`Open this market on ${resultBook.label}`}
+                            >
+                              Open
+                            </a>
                           )}
                         </span>
                       </li>
