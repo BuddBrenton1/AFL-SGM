@@ -922,10 +922,9 @@ export default function HomePage() {
                     BEST per game
                   </h3>
                   <p className="text-sm text-[var(--muted)]">
-                    Player props that cleared in every one of the last 4–5
-                    games (live ESPN box scores when available). Tackle/mark
-                    locks need real form — not disposal guesses. Live{" "}
-                    {resultBook.label} markets preferred.
+                    ESPN last-5 box scores only — a prop must clear in all 5
+                    recent games (no seed guesses, no 4-game partials). Live{" "}
+                    {resultBook.label} shorts preferred.
                   </p>
                 </div>
                 <div className="grid gap-4">

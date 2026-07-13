@@ -9,11 +9,12 @@ import type {
 import { composeSgmMulti, legPrice } from "./scanner";
 
 export const BEST_FORM_GAMES = 5;
-export const BEST_FORM_MIN_GAMES = 4;
+/** BEST locks need a full last-5 — partial windows hide recent misses. */
+export const BEST_FORM_MIN_GAMES = 5;
 /** Book must price BEST legs as shorts — long prices are not locks. */
 export const BEST_MAX_LEG_PRICE = 1.4;
-/** Season milestone hit-rate floor when we have a rate for that line. */
-export const BEST_MIN_SEASON_HIT_RATE = 0.85;
+/** Recent-form hit-rate floor (must be 100% of last-5). */
+export const BEST_MIN_RECENT_HIT_RATE = 1;
 
 function recentValues(
   form: PlayerSeasonForm,
@@ -33,21 +34,16 @@ function recentValues(
   }
 }
 
-function seasonHitRate(
+function recentHitRate(
   form: PlayerSeasonForm,
   market: MarketType,
   threshold: number,
 ): number | null {
-  const key = `${threshold}+`;
-  if (market === "player_goal") {
-    const rate = form.goalHitRates[key];
-    return typeof rate === "number" ? rate : null;
-  }
-  if (market === "player_disposal") {
-    const rate = form.disposalHitRates[key];
-    return typeof rate === "number" ? rate : null;
-  }
-  return null;
+  const values = recentValues(form, market);
+  if (values.length < BEST_FORM_MIN_GAMES) return null;
+  const window = values.slice(-BEST_FORM_GAMES);
+  if (window.length < BEST_FORM_MIN_GAMES) return null;
+  return window.filter((v) => v >= threshold).length / window.length;
 }
 
 /** True if the player cleared the threshold in every one of the last N games. */
@@ -97,12 +93,14 @@ function findPlayer(
 
 /**
  * Player props available on the book that the athlete has cleared in
- * every recent game (last 4–5). Prefers the highest threshold still
+ * every recent game (last 5). Prefers the highest threshold still
  * sitting at 100% recent form for each player+market.
  *
- * Extra gates (stops stale seed form looking like locks):
+ * Hard gates:
+ * - Live ESPN form only (no seed guesses)
+ * - Full last-5 window (no 4-game partials that hide a miss)
+ * - 100% hit-rate on the exact threshold (incl. 14+, 23+, …)
  * - Live book price must be short (≤ $1.40)
- * - Season hit-rate for that milestone must be ≥ 85% when known
  */
 export function collectBestFormLegs(
   legs: CandidateLeg[],
@@ -123,17 +121,21 @@ export function collectBestFormLegs(
 
     const player = findPlayer(leg, game);
     if (!player) continue;
-    // Inferred mark/tackle lines from disposals are not real form — skip unless
-    // we have explicit seed last-5 or a live ESPN overlay.
+    // Seed form is too wrong for locks — ESPN last-5 only
+    if (player.formSource !== "espn") continue;
     if (leg.market === "player_mark" && !player.marksExplicit) continue;
     if (leg.market === "player_tackle" && !player.tacklesExplicit) continue;
 
     const recent = recentValues(player.form, leg.market);
-    const hit = hitEveryRecentGame(recent, leg.threshold, BEST_FORM_GAMES);
-    if (!hit.ok) continue;
+    if (recent.length < BEST_FORM_MIN_GAMES) continue;
 
-    const seasonRate = seasonHitRate(player.form, leg.market, leg.threshold);
-    if (seasonRate != null && seasonRate < BEST_MIN_SEASON_HIT_RATE - 1e-9) {
+    const hit = hitEveryRecentGame(recent, leg.threshold, BEST_FORM_GAMES);
+    if (!hit.ok || hit.games < BEST_FORM_MIN_GAMES) continue;
+    if (hit.hits / hit.games < BEST_MIN_RECENT_HIT_RATE - 1e-9) continue;
+
+    // Exact-threshold rate (covers 14+ etc. missing from season maps)
+    const exactRate = recentHitRate(player.form, leg.market, leg.threshold);
+    if (exactRate == null || exactRate < BEST_MIN_RECENT_HIT_RATE - 1e-9) {
       continue;
     }
 
@@ -145,11 +147,7 @@ export function collectBestFormLegs(
           key: "best-form",
           label: "Recent form",
           impact: "positive",
-          detail: `L${hit.games} ${hit.hits}/${hit.games} · cleared ${leg.threshold}+ every game (${hit.values.join(", ")})${
-            seasonRate != null
-              ? ` · season ${(seasonRate * 100).toFixed(0)}%`
-              : ""
-          }`,
+          detail: `L${hit.games} ${hit.hits}/${hit.games} · ${leg.threshold}+ every game [${hit.values.join(", ")}] · ESPN`,
           weight: 0.05,
         },
       ],
@@ -248,7 +246,7 @@ export function buildBestFormMulti(opts: {
 
   multi.id = `best:${multi.id}`;
   multi.rationale = [
-    `BEST · ${picked.length} legs · each hit in all last ${BEST_FORM_MIN_GAMES}–${BEST_FORM_GAMES} games`,
+    `BEST · ${picked.length} legs · each hit in all last ${BEST_FORM_GAMES} ESPN games`,
     `Each leg ≤ $${BEST_MAX_LEG_PRICE.toFixed(2)} on the book (shorts only)`,
     opts.requireSportsbet !== false
       ? `Live ${opts.bookmakerLabel ?? "book"} player props only`

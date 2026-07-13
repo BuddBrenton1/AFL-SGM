@@ -202,7 +202,7 @@ export async function loadLiveFormForTeams(
     const last5Disposals = row.disposals.slice(-games);
     const last5Marks = row.marks.slice(-games);
     const last5Tackles = row.tackles.slice(-games);
-    if (last5Disposals.length < 4 && last5Tackles.length < 4) continue;
+    if (last5Disposals.length < 5 && last5Tackles.length < 5) continue;
     byName.set(normalizePersonName(row.name), {
       name: row.name,
       teamId: row.teamId,
@@ -239,12 +239,20 @@ export function applyLiveFormToPlayers(
     const live =
       liveByName.get(normalizePersonName(player.name)) ??
       [...liveByName.values()].find((l) => namesMatch(l.name, player.name));
-    if (!live || live.games < 4) return player;
+    if (!live || live.games < 5) return player;
     matched += 1;
-    const last5Goals = live.last5Goals;
-    const last5Disposals = live.last5Disposals;
-    const last5Marks = live.last5Marks;
-    const last5Tackles = live.last5Tackles;
+    const last5Goals = live.last5Goals.slice(-5);
+    const last5Disposals = live.last5Disposals.slice(-5);
+    const last5Marks = live.last5Marks.slice(-5);
+    const last5Tackles = live.last5Tackles.slice(-5);
+    const disposalHitRates: Record<string, number> = {};
+    for (let th = 10; th <= 35; th += 1) {
+      disposalHitRates[`${th}+`] = hitRate(last5Disposals, th);
+    }
+    const goalHitRates: Record<string, number> = {};
+    for (let th = 1; th <= 5; th += 1) {
+      goalHitRates[`${th}+`] = hitRate(last5Goals, th);
+    }
     return {
       ...player,
       marksExplicit: true,
@@ -261,17 +269,8 @@ export function applyLiveFormToPlayers(
         last5Disposals,
         last5Marks,
         last5Tackles,
-        goalHitRates: {
-          "1+": hitRate(last5Goals, 1),
-          "2+": hitRate(last5Goals, 2),
-          "3+": hitRate(last5Goals, 3),
-        },
-        disposalHitRates: {
-          "15+": hitRate(last5Disposals, 15),
-          "20+": hitRate(last5Disposals, 20),
-          "25+": hitRate(last5Disposals, 25),
-          "30+": hitRate(last5Disposals, 30),
-        },
+        goalHitRates,
+        disposalHitRates,
       },
     };
   });

@@ -151,9 +151,15 @@ export const PLAYERS: PlayerProfile[] = [
   p("gee-close", "Brad Close", "geelong", "medium-forward", 45, form({ goalsAvg: 1.3, disposalsAvg: 16 })),
   p("gee-danger", "Patrick Dangerfield", "geelong", "midfielder", 35, form({
     goalsAvg: 0.8,
-    disposalsAvg: 22,
-    last5Disposals: [28, 15, 19, 17, 22],
-    disposalHitRates: { "15+": 0.72, "20+": 0.3, "25+": 0.12, "30+": 0.04 },
+    disposalsAvg: 20,
+    last5Disposals: [30, 22, 20, 17, 12],
+    disposalHitRates: {
+      "14+": 0.7,
+      "15+": 0.7,
+      "20+": 0.3,
+      "25+": 0.12,
+      "30+": 0.04,
+    },
   }), 0.78),
   p("gee-stewart", "Tom Stewart", "geelong", "defender", 44, form({ goalsAvg: 0.1, disposalsAvg: 22, marksAvg: 7 })),
   p("gee-manning", "Tyson Stengle", "geelong", "medium-forward", 18, form({ goalsAvg: 1.9, disposalsAvg: 13, last5Goals: [2, 3, 1, 2, 2] })),

@@ -298,13 +298,23 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     combinationsChecked += scanned.combinationsChecked;
     allMultis.push(...scanned.multis);
 
-    // BEST: variable-leg multi from Sportsbet player props with 100% recent form
+    // BEST: always prefer live book player-prop lines + ESPN form locks
+    const boardLegs = board
+      ? legsFromSportsbetBoard(board, gameLive, bookmaker)
+      : [];
+    const bestLegs = (() => {
+      const byId = new Map<string, (typeof legs)[number]>();
+      for (const leg of [...legs, ...boardLegs]) {
+        if (leg.sportsbetOdds == null && board) continue;
+        byId.set(leg.id, leg);
+      }
+      return [...byId.values()];
+    })();
     const best = buildBestFormMulti({
       game: gameLive,
-      legs,
+      legs: bestLegs.length ? bestLegs : legs,
       sportsbetLink: board?.eventLink,
       bookmakerLabel: book.label,
-      // Prefer book-priced props; if board is thin, still try with model locks
       requireSportsbet: !!board,
     });
     if (best) {
