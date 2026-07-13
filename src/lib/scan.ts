@@ -1,4 +1,4 @@
-import { getInsOuts } from "./ins-outs";
+import { resolveInsOuts } from "./ins-outs";
 import { playersForTeam } from "./players";
 import { fetchStandings, fetchUpcomingGames } from "./squiggle";
 import {
@@ -16,11 +16,19 @@ import type {
   LadderEntry,
   ScanRequest,
   ScanResult,
+  TeamInsOuts,
+  WeatherSnapshot,
 } from "./types";
 import { generateLegsForGame } from "./engine/legs";
 import { predictMatch } from "./engine/predict";
 import { deepScanGame } from "./engine/scanner";
 import { getWeatherForFixture } from "./weather";
+import { fetchAflInjuryRows, type AflInjuryRow } from "./afl-injuries";
+import {
+  fetchAflMatchRefs,
+  fetchMatchLineupInsOuts,
+  findAflMatchRef,
+} from "./afl-lineups";
 
 function fallbackLadder(teamId: FixtureGame["homeTeamId"], rank: number): LadderEntry {
   return {
@@ -39,6 +47,11 @@ function fallbackLadder(teamId: FixtureGame["homeTeamId"], rank: number): Ladder
 export function enrichGame(
   game: FixtureGame,
   ladderByTeam: Map<string, LadderEntry>,
+  extras?: {
+    weather?: WeatherSnapshot;
+    homeInsOuts?: TeamInsOuts;
+    awayInsOuts?: TeamInsOuts;
+  },
 ): EnrichedGame {
   const homeLadder =
     ladderByTeam.get(game.homeTeamId) ?? fallbackLadder(game.homeTeamId, 9);
@@ -58,9 +71,23 @@ export function enrichGame(
     ...game,
     homeLadder,
     awayLadder,
-    weather: getWeatherForFixture(game.venue, game.date, game.id),
-    homeInsOuts: getInsOuts(game.homeTeamId),
-    awayInsOuts: getInsOuts(game.awayTeamId),
+    weather:
+      extras?.weather ??
+      ({
+        venue: game.venue,
+        condition: "clear",
+        tempC: 15,
+        windKmh: 12,
+        rainChance: 20,
+        summary: "Weather pending",
+        goalMultiplier: 1,
+        disposalMultiplier: 1,
+        tackleMultiplier: 1,
+      } satisfies WeatherSnapshot),
+    homeInsOuts:
+      extras?.homeInsOuts ?? resolveInsOuts({ team: game.homeTeamId }),
+    awayInsOuts:
+      extras?.awayInsOuts ?? resolveInsOuts({ team: game.awayTeamId }),
     homePlayers: playersForTeam(game.homeTeamId),
     awayPlayers: playersForTeam(game.awayTeamId),
     homeAdvantage,
@@ -80,12 +107,80 @@ export function enrichGame(
 }
 
 export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
-  const [games, standings] = await Promise.all([
+  const [games, standings, injuriesResult, matchRefsResult] = await Promise.all([
     fetchUpcomingGames(2026),
     fetchStandings(2026),
+    fetchAflInjuryRows()
+      .then((rows) => ({ rows, ok: true as const }))
+      .catch(() => ({ rows: [] as AflInjuryRow[], ok: false as const })),
+    fetchAflMatchRefs(2026)
+      .then((refs) => ({ refs, ok: true as const }))
+      .catch(() => ({ refs: [], ok: false as const })),
   ]);
+
   const ladderByTeam = new Map(standings.map((s) => [s.team, s]));
-  return games.map((g) => enrichGame(g, ladderByTeam));
+  const injuries = injuriesResult.rows;
+
+  // Live weather per fixture (dedupe by venue+date)
+  const weatherKey = (g: FixtureGame) => `${g.venue}|${g.date}`;
+  const weatherJobs = new Map<string, Promise<WeatherSnapshot>>();
+  for (const g of games) {
+    const key = weatherKey(g);
+    if (!weatherJobs.has(key)) {
+      weatherJobs.set(key, getWeatherForFixture(g.venue, g.date, g.id));
+    }
+  }
+  const weatherEntries = await Promise.all(
+    [...weatherJobs.entries()].map(async ([key, job]) => [key, await job] as const),
+  );
+  const weatherMap = new Map(weatherEntries);
+
+  // Official team sheets when published (limit concurrent calls)
+  const lineupByGameId = new Map<
+    number,
+    { home: TeamInsOuts; away: TeamInsOuts }
+  >();
+  const lineupTargets = games.slice(0, 12);
+  await Promise.all(
+    lineupTargets.map(async (g) => {
+      const ref = findAflMatchRef(
+        matchRefsResult.refs,
+        g.round,
+        g.homeTeamId,
+        g.awayTeamId,
+      );
+      if (!ref) return;
+      try {
+        const lineup = await fetchMatchLineupInsOuts(
+          ref.providerId,
+          g.homeTeamId,
+          g.awayTeamId,
+        );
+        if (lineup?.available) {
+          lineupByGameId.set(g.id, { home: lineup.home, away: lineup.away });
+        }
+      } catch {
+        /* ignore single-match failures */
+      }
+    }),
+  );
+
+  return games.map((g) => {
+    const lineup = lineupByGameId.get(g.id);
+    return enrichGame(g, ladderByTeam, {
+      weather: weatherMap.get(weatherKey(g)),
+      homeInsOuts: resolveInsOuts({
+        team: g.homeTeamId,
+        lineup: lineup?.home,
+        injuries,
+      }),
+      awayInsOuts: resolveInsOuts({
+        team: g.awayTeamId,
+        lineup: lineup?.away,
+        injuries,
+      }),
+    });
+  });
 }
 
 export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
@@ -111,6 +206,8 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   let gamesSkippedSparsePrices = 0;
   const scanNotes: string[] = [
     "Live fixtures & ladder via Squiggle API",
+    "Kickoff weather via Open-Meteo (venue forecast)",
+    "Injuries via AFL.com.au official injury list; team sheets via AFL match roster when published",
     "Leg probabilities blend season averages, last-5 form, home/away splits",
     "Weather, ins/outs, ladder rank & venue advantage applied per leg",
     "Same-game correlation haircut applied to stacked markets",

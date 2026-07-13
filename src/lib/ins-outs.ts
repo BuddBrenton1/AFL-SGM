@@ -1,6 +1,7 @@
 import type { TeamId, TeamInsOuts } from "./types";
+import { injuryRowsToInsOuts, type AflInjuryRow } from "./afl-injuries";
 
-/** Latest team lists — illustrative mid-week movements for scan context. */
+/** Latest team lists — illustrative mid-week movements used only as fallback. */
 const INS_OUTS: Partial<Record<TeamId, Omit<TeamInsOuts, "team">>> = {
   melbourne: {
     ins: ["Jake Melksham", "Harrison Petty"],
@@ -115,12 +116,58 @@ const INS_OUTS: Partial<Record<TeamId, Omit<TeamInsOuts, "team">>> = {
   },
 };
 
-export function getInsOuts(team: TeamId): TeamInsOuts {
+export function getStaticInsOuts(team: TeamId): TeamInsOuts {
   const row = INS_OUTS[team];
   if (!row) {
     return { team, ins: [], outs: [], notes: ["No late changes flagged"] };
   }
   return { team, ...row };
+}
+
+/** @deprecated Prefer resolveInsOuts with live injury/lineup feeds. */
+export function getInsOuts(team: TeamId): TeamInsOuts {
+  return getStaticInsOuts(team);
+}
+
+/**
+ * Prefer official team sheet ins/outs, else AFL injury list, else static fallback.
+ */
+export function resolveInsOuts(opts: {
+  team: TeamId;
+  lineup?: TeamInsOuts | null;
+  injuries?: AflInjuryRow[];
+}): TeamInsOuts {
+  const { team, lineup, injuries } = opts;
+  if (lineup && (lineup.ins.length > 0 || lineup.outs.length > 0)) {
+    if (injuries?.length) {
+      const injury = injuryRowsToInsOuts(team, injuries);
+      const existing = new Set(
+        lineup.outs.map((o) => o.split("(")[0]?.trim().toLowerCase()),
+      );
+      const extraOuts = injury.outs.filter((o) => {
+        const name = o.split("(")[0]?.trim().toLowerCase();
+        return name && !existing.has(name);
+      });
+      if (extraOuts.length) {
+        return {
+          ...lineup,
+          outs: [...lineup.outs, ...extraOuts],
+          notes: [
+            ...lineup.notes,
+            ...extraOuts.slice(0, 2).map((o) => `Also injured: ${o}`),
+          ],
+        };
+      }
+    }
+    return lineup;
+  }
+
+  if (injuries?.length) {
+    const live = injuryRowsToInsOuts(team, injuries);
+    if (live.outs.length) return live;
+  }
+
+  return getStaticInsOuts(team);
 }
 
 export function isPlayerNamed(
