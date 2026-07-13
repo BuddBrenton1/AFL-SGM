@@ -307,14 +307,10 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
   multis = multis.slice(0, maxResults);
 
-  const legCap = req.maxSingleLegPrice ?? 1.35;
-  if (mode === "legs") {
-    scanNotes.push(`Target construction: ${req.legCount ?? 3}-leg same game multis`);
-  } else {
-    scanNotes.push(
-      `Target price band around $${req.targetOdds ?? 10} · max ${req.legCount ?? 6} legs · each leg ≤ $${legCap.toFixed(2)}`,
-    );
-  }
+  const legCap = req.maxSingleLegPrice ?? 1.65;
+  scanNotes.push(
+    `Target ~$${req.targetOdds ?? 15} · max ${req.legCount ?? 10} legs · each ≤ $${legCap.toFixed(2)}`,
+  );
   if (minConf > 0) {
     scanNotes.push(
       `Confidence floor: ${(minConf * 100).toFixed(0)}%+ (${multis.length} multis kept)`,
@@ -346,7 +342,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     target: {
       legCount: req.legCount,
       targetOdds: req.targetOdds,
-      maxSingleLegPrice: mode === "odds" ? legCap : undefined,
+      maxSingleLegPrice: legCap,
       minConfidence: minConf,
       sportsbetOnly: !!req.sportsbetOnly,
       bookmaker: book.id,

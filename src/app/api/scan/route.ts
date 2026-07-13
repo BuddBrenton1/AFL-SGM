@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Partial<ScanRequest>;
-    const mode = body.mode === "odds" ? "odds" : "legs";
+    // Unified builder: always target-price with max-legs / max-price / confidence
+    const mode = "odds";
 
     if (body.bookmaker != null && !isBookmakerId(String(body.bookmaker))) {
       return NextResponse.json(
@@ -20,38 +21,32 @@ export async function POST(request: Request) {
       );
     }
 
-    if (mode === "legs") {
-      const legCount = Number(body.legCount ?? 3);
-      if (!Number.isFinite(legCount) || legCount < 2 || legCount > 25) {
+    const targetOdds = Number(body.targetOdds ?? 15);
+    if (!Number.isFinite(targetOdds) || targetOdds < 2 || targetOdds > 500) {
+      return NextResponse.json(
+        { error: "Target odds must be between $2 and $500" },
+        { status: 400 },
+      );
+    }
+
+    const maxLegs = Number(body.legCount ?? 10);
+    if (!Number.isFinite(maxLegs) || maxLegs < 2 || maxLegs > 25) {
+      return NextResponse.json(
+        { error: "Max legs must be between 2 and 25" },
+        { status: 400 },
+      );
+    }
+
+    let maxSingleLegPrice = 1.65;
+    if (body.maxSingleLegPrice != null) {
+      const cap = Number(body.maxSingleLegPrice);
+      if (!Number.isFinite(cap) || cap < 1.05 || cap > 3) {
         return NextResponse.json(
-          { error: "Leg count must be between 2 and 25" },
+          { error: "Max single leg price must be between $1.05 and $3.00" },
           { status: 400 },
         );
       }
-    } else {
-      const targetOdds = Number(body.targetOdds ?? 10);
-      if (!Number.isFinite(targetOdds) || targetOdds < 2 || targetOdds > 500) {
-        return NextResponse.json(
-          { error: "Target odds must be between $2 and $500" },
-          { status: 400 },
-        );
-      }
-      const maxLegs = Number(body.legCount ?? 6);
-      if (!Number.isFinite(maxLegs) || maxLegs < 2 || maxLegs > 25) {
-        return NextResponse.json(
-          { error: "Max legs must be between 2 and 25" },
-          { status: 400 },
-        );
-      }
-      if (body.maxSingleLegPrice != null) {
-        const cap = Number(body.maxSingleLegPrice);
-        if (!Number.isFinite(cap) || cap < 1.05 || cap > 3) {
-          return NextResponse.json(
-            { error: "Max single leg price must be between $1.05 and $3.00" },
-            { status: 400 },
-          );
-        }
-      }
+      maxSingleLegPrice = cap;
     }
 
     if (body.minConfidence != null) {
@@ -66,11 +61,9 @@ export async function POST(request: Request) {
 
     const result = await runDeepScan({
       mode,
-      legCount: body.legCount ? Number(body.legCount) : mode === "odds" ? 6 : 3,
-      targetOdds: body.targetOdds ? Number(body.targetOdds) : 10,
-      maxSingleLegPrice: body.maxSingleLegPrice
-        ? Number(body.maxSingleLegPrice)
-        : undefined,
+      legCount: maxLegs,
+      targetOdds,
+      maxSingleLegPrice,
       gameIds: body.gameIds,
       maxResults: body.maxResults ? Number(body.maxResults) : 12,
       minConfidence:

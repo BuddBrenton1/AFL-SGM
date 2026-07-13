@@ -42,8 +42,6 @@ interface FixtureCard {
   };
 }
 
-type Mode = "legs" | "odds";
-
 function formatMatchDate(date: string) {
   const d = new Date(date.replace(" ", "T"));
   return d.toLocaleString("en-AU", {
@@ -65,11 +63,10 @@ export default function HomePage() {
   const [fixtures, setFixtures] = useState<FixtureCard[]>([]);
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>("legs");
-  const [legCount, setLegCount] = useState(6);
-  const [targetOdds, setTargetOdds] = useState(12);
-  const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.35);
-  const [minConfidencePct, setMinConfidencePct] = useState(0);
+  const [legCount, setLegCount] = useState(10);
+  const [targetOdds, setTargetOdds] = useState(15);
+  const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.65);
+  const [minConfidencePct, setMinConfidencePct] = useState(60);
   const [sportsbetOnly, setSportsbetOnly] = useState(false);
   const [bookmaker, setBookmaker] = useState<BookmakerId>(DEFAULT_BOOKMAKER);
   const [selectedGames, setSelectedGames] = useState<number[]>([]);
@@ -198,10 +195,10 @@ export default function HomePage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            mode,
+            mode: "odds",
             legCount,
             targetOdds,
-            maxSingleLegPrice: mode === "odds" ? maxSingleLegPrice : undefined,
+            maxSingleLegPrice,
             minConfidence: minConfidencePct / 100,
             sportsbetOnly,
             bookmaker,
@@ -361,9 +358,9 @@ export default function HomePage() {
                 Deep scan
               </h2>
               <p className="max-w-2xl text-sm text-[var(--muted)]">
-                Choose leg count or a target price. Bounce enumerates same-game
-                combinations and ranks them by confidence, edge and correlation
-                risk — overlaying {book.label} prices when linked.
+                Set your target payout, max price per leg, max legs and
+                confidence floor. Bounce builds same-game multis to match —
+                overlaying {book.label} prices when linked.
               </p>
             </div>
           </div>
@@ -423,36 +420,85 @@ export default function HomePage() {
             )}
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setMode("legs")}
-              className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition ${
-                mode === "legs"
-                  ? "bg-[var(--orange)] text-[#111]"
-                  : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
-              }`}
-            >
-              By legs
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("odds")}
-              className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition ${
-                mode === "odds"
-                  ? "bg-[var(--orange)] text-[#111]"
-                  : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
-              }`}
-            >
-              By target odds
-            </button>
-          </div>
-
           <div className="mt-6 grid gap-6 md:grid-cols-2">
-            {mode === "legs" ? (
+            <div className="space-y-5">
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
-                  Number of legs
+                  Target multi price ($)
+                </span>
+                <div className="mt-2 flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={2}
+                    max={500}
+                    step={1}
+                    value={targetOdds}
+                    onChange={(e) => setTargetOdds(Number(e.target.value))}
+                    className="w-full border border-[var(--line)] bg-[var(--bg-raised)] px-4 py-3 text-lg font-semibold text-[var(--ink)] outline-none focus:border-[var(--orange)]"
+                  />
+                  <div className="flex gap-2">
+                    {[5, 10, 15, 25, 50].map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setTargetOdds(v)}
+                        className={`border px-3 py-2 text-sm font-semibold ${
+                          targetOdds === v
+                            ? "border-[var(--orange)] bg-[var(--orange)] text-[#111]"
+                            : "border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
+                        }`}
+                      >
+                        ${v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                  Max price per leg
+                </span>
+                <div className="mt-2 flex items-center gap-4">
+                  <input
+                    type="range"
+                    min={1.1}
+                    max={2.5}
+                    step={0.05}
+                    value={maxSingleLegPrice}
+                    onChange={(e) =>
+                      setMaxSingleLegPrice(Number(Number(e.target.value).toFixed(2)))
+                    }
+                    className="w-full accent-[var(--leather)]"
+                  />
+                  <span
+                    className="min-w-[4.5rem] text-right font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
+                    style={{ fontWeight: 600 }}
+                  >
+                    ${maxSingleLegPrice.toFixed(2)}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[1.2, 1.35, 1.5, 1.65, 1.8, 2.0].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMaxSingleLegPrice(v)}
+                      className={`px-2.5 py-1 text-xs font-semibold ${
+                        Math.abs(maxSingleLegPrice - v) < 0.001
+                          ? "bg-[var(--orange)] text-[#111]"
+                          : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
+                      }`}
+                    >
+                      ${v.toFixed(2)}
+                    </button>
+                  ))}
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                  Max legs
                 </span>
                 <div className="mt-2 flex items-center gap-4">
                   <input
@@ -470,134 +516,86 @@ export default function HomePage() {
                     {legCount}
                   </span>
                 </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[3, 4, 5, 6, 8, 10, 12].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setLegCount(v)}
+                      className={`px-2.5 py-1 text-xs font-semibold ${
+                        legCount === v
+                          ? "bg-[var(--orange)] text-[#111]"
+                          : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
                 <p className="mt-2 text-xs text-[var(--muted)]">
-                  2–25 legs. Bigger SGMs use beam search so scans stay fast.
+                  Theoretical max ≈ $
+                  {Math.pow(maxSingleLegPrice, legCount).toFixed(1)} with{" "}
+                  {legCount} × ${maxSingleLegPrice.toFixed(2)} legs
+                  {Math.pow(maxSingleLegPrice, legCount) < targetOdds * 0.7
+                    ? " — raise max price or legs to reach your target"
+                    : ""}
+                  .
                 </p>
               </label>
-            ) : (
-              <div className="space-y-5">
-                <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
-                    Target multi price ($)
-                  </span>
-                  <div className="mt-2 flex items-center gap-3">
-                    <input
-                      type="number"
-                      min={2}
-                      max={500}
-                      step={1}
-                      value={targetOdds}
-                      onChange={(e) => setTargetOdds(Number(e.target.value))}
-                      className="w-full border border-[var(--line)] bg-[var(--bg-raised)] px-4 py-3 text-lg font-semibold text-[var(--ink)] outline-none focus:border-[var(--orange)]"
-                    />
-                    <div className="flex gap-2">
-                      {[5, 10, 25, 50].map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setTargetOdds(v)}
-                          className="border border-[var(--line)] px-3 py-2 text-sm font-semibold text-[var(--muted-strong)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
-                        >
-                          ${v}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </label>
+            </div>
 
-                <label className="block">
+            <div className="flex flex-col gap-5">
+              <label className="block">
+                <div className="flex flex-wrap items-end justify-between gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
-                    Max legs
+                    Minimum confidence
                   </span>
-                  <div className="mt-2 flex items-center gap-4">
-                    <input
-                      type="range"
-                      min={2}
-                      max={25}
-                      value={legCount}
-                      onChange={(e) => setLegCount(Number(e.target.value))}
-                      className="w-full accent-[var(--leather)]"
-                    />
-                    <span
-                      className="font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
-                      style={{ fontWeight: 600 }}
+                  <span className="text-xs text-[var(--muted)]">
+                    {minConfidencePct === 0
+                      ? "No floor"
+                      : `${minConfidencePct}%+ average leg hit-rate`}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center gap-4">
+                  <input
+                    type="range"
+                    min={0}
+                    max={80}
+                    step={5}
+                    value={minConfidencePct}
+                    onChange={(e) => setMinConfidencePct(Number(e.target.value))}
+                    className="w-full accent-[var(--leather)]"
+                  />
+                  <span
+                    className="min-w-[4.5rem] text-right font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
+                    style={{ fontWeight: 600 }}
+                  >
+                    {minConfidencePct}%
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[0, 40, 50, 60, 70].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMinConfidencePct(v)}
+                      className={`px-2.5 py-1 text-xs font-semibold ${
+                        minConfidencePct === v
+                          ? "bg-[var(--orange)] text-[#111]"
+                          : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
+                      }`}
                     >
-                      {legCount}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {[3, 4, 5, 6, 8, 10, 12].map((v) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => setLegCount(v)}
-                        className={`px-2.5 py-1 text-xs font-semibold ${
-                          legCount === v
-                            ? "bg-[var(--orange)] text-[#111]"
-                            : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
-                        }`}
-                      >
-                        {v}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-xs text-[var(--muted)]">
-                    Cap how many legs the target-price builder can stack.
-                  </p>
-                </label>
+                      {v === 0 ? "Any" : `${v}%+`}
+                    </button>
+                  ))}
+                </div>
+              </label>
 
-                <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
-                    Max price per leg
-                  </span>
-                  <div className="mt-2 flex items-center gap-4">
-                    <input
-                      type="range"
-                      min={1.1}
-                      max={2.5}
-                      step={0.05}
-                      value={maxSingleLegPrice}
-                      onChange={(e) =>
-                        setMaxSingleLegPrice(Number(Number(e.target.value).toFixed(2)))
-                      }
-                      className="w-full accent-[var(--leather)]"
-                    />
-                    <span
-                      className="min-w-[4.5rem] text-right font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
-                      style={{ fontWeight: 600 }}
-                    >
-                      ${maxSingleLegPrice.toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {[1.2, 1.35, 1.5, 1.65, 1.8, 2.0].map((v) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => setMaxSingleLegPrice(v)}
-                        className={`px-2.5 py-1 text-xs font-semibold ${
-                          Math.abs(maxSingleLegPrice - v) < 0.001
-                            ? "bg-[var(--orange)] text-[#111]"
-                            : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
-                        }`}
-                      >
-                        ${v.toFixed(2)}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-xs text-[var(--muted)]">
-                    Only includes legs at or under this price (up to {legCount} legs).
-                  </p>
-                </label>
-              </div>
-            )}
-
-            <div className="flex flex-col justify-end">
               <button
                 type="button"
                 onClick={runScan}
                 disabled={scanning || isPending || !selectedGames.length}
-                className="relative overflow-hidden bg-[var(--orange)] px-6 py-4 text-left text-[#111] transition enabled:hover:bg-[var(--orange-hot)] disabled:opacity-60"
+                className="relative mt-auto overflow-hidden bg-[var(--orange)] px-6 py-4 text-left text-[#111] transition enabled:hover:bg-[var(--orange-hot)] disabled:opacity-60"
               >
                 <span
                   className="font-[family-name:var(--font-teko)] text-3xl leading-none"
@@ -606,84 +604,37 @@ export default function HomePage() {
                   {scanning || isPending ? "Scanning fixtures…" : "Run deep scan"}
                 </span>
                 <p className="mt-1 text-xs text-black/70">
-                  Form · weather · lists · ladder · venue
+                  ~${targetOdds} · ≤{legCount} legs · ≤${maxSingleLegPrice.toFixed(2)} ·{" "}
+                  {minConfidencePct === 0 ? "any conf" : `${minConfidencePct}%+`}
                 </p>
                 {(scanning || isPending) && (
                   <span className="scan-bar absolute bottom-0 left-0 right-0 h-1 bg-[var(--flood)]" />
                 )}
               </button>
               {scanError && (
-                <p className="mt-2 text-sm text-[var(--leather)]">{scanError}</p>
+                <p className="text-sm text-[var(--leather)]">{scanError}</p>
               )}
             </div>
           </div>
 
-          <div className="mt-6 border-t border-[var(--line)] pt-5">
-            <label className="block">
-              <div className="flex flex-wrap items-end justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
-                  Minimum confidence
-                </span>
-                <span className="text-xs text-[var(--muted)]">
-                  {minConfidencePct === 0
-                    ? "No floor — show all ranked multis"
-                    : `Only keep multis whose legs average ${minConfidencePct}%+ hit confidence`}
-                </span>
-              </div>
-              <div className="mt-2 flex items-center gap-4">
-                <input
-                  type="range"
-                  min={0}
-                  max={80}
-                  step={5}
-                  value={minConfidencePct}
-                  onChange={(e) => setMinConfidencePct(Number(e.target.value))}
-                  className="w-full accent-[var(--leather)]"
-                />
-                <span
-                  className="min-w-[4.5rem] text-right font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
-                  style={{ fontWeight: 600 }}
-                >
-                  {minConfidencePct}%
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {[0, 40, 50, 60, 70].map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setMinConfidencePct(v)}
-                    className={`px-2.5 py-1 text-xs font-semibold ${
-                      minConfidencePct === v
-                        ? "bg-[var(--orange)] text-[#111]"
-                        : "border border-[var(--line)] text-[var(--muted-strong)] hover:border-[var(--orange)]"
-                    }`}
-                  >
-                    {v === 0 ? "Any" : `${v}%+`}
-                  </button>
-                ))}
-              </div>
-            </label>
-
-            <label className="mt-5 flex cursor-pointer items-start gap-3 border border-[var(--line)] bg-black/20 p-4">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 accent-[var(--turf)]"
-                checked={sportsbetOnly}
-                onChange={(e) => setSportsbetOnly(e.target.checked)}
-              />
-              <span>
-                <span className="block text-sm font-semibold text-[var(--ink)]">
-                  Prefer {book.label} prices
-                </span>
-                <span className="mt-1 block text-xs text-[var(--muted)]">
-                  Rank live {book.label} prices first ({book.shortLabel} badge).
-                  Odds API often only has AFL match markets — Bounce still fills
-                  player props so the scan isn’t empty.
-                </span>
+          <label className="mt-6 flex cursor-pointer items-start gap-3 border border-[var(--line)] bg-black/20 p-4">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 accent-[var(--turf)]"
+              checked={sportsbetOnly}
+              onChange={(e) => setSportsbetOnly(e.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-[var(--ink)]">
+                Prefer {book.label} prices
               </span>
-            </label>
-          </div>
+              <span className="mt-1 block text-xs text-[var(--muted)]">
+                Rank live {book.label} prices first ({book.shortLabel} badge).
+                Odds API often only has AFL match markets — Bounce still fills
+                player props so the scan isn’t empty.
+              </span>
+            </span>
+          </label>
         </div>
       </section>
 
@@ -888,9 +839,9 @@ export default function HomePage() {
                 {result.combinationsChecked.toLocaleString()} combos
               </span>
               <span>
-                Mode: {result.mode === "legs"
-                  ? `${result.target.legCount} legs`
-                  : `~$${result.target.targetOdds} · ≤${result.target.legCount ?? 6} legs · each ≤ $${(result.target.maxSingleLegPrice ?? 1.35).toFixed(2)}`}
+                Mode: ~${result.target.targetOdds} · ≤{result.target.legCount ?? 10}{" "}
+                legs · each ≤ $
+                {(result.target.maxSingleLegPrice ?? 1.65).toFixed(2)}
               </span>
               {(result.target.minConfidence ?? 0) > 0 && (
                 <span>

@@ -501,6 +501,20 @@ export function deepScanGame(opts: {
     let effectiveMax = maxSingle;
     let shortLegs = sourceLegs.filter((l) => l.odds <= effectiveMax + 1e-9);
 
+    // If the cap can't mathematically reach ~70% of target, raise max per-leg
+    // enough to make the band reachable (still capped at $2.50).
+    const reachableWith = (cap: number) => Math.pow(cap, maxLegs);
+    if (reachableWith(effectiveMax) < target * 0.7) {
+      for (const bump of [1.5, 1.65, 1.8, 2.0, 2.2, 2.5]) {
+        if (bump <= effectiveMax + 1e-9) continue;
+        const next = sourceLegs.filter((l) => l.odds <= bump + 1e-9);
+        if (next.length < Math.min(maxLegs, 4)) continue;
+        shortLegs = next;
+        effectiveMax = bump;
+        if (reachableWith(effectiveMax) >= target * 0.7) break;
+      }
+    }
+
     // Live book props are often longer than Bounce model shorts — relax the cap
     // rather than returning an empty card when "prices only" is on.
     if (shortLegs.length < Math.max(4, maxLegs)) {
@@ -552,7 +566,7 @@ export function deepScanGame(opts: {
       }
     }
 
-    const filtered = multis
+    const scored = multis
       .filter((m) => m.legs.every((l) => l.odds <= effectiveMax + 1e-9))
       .filter((m) => m.legs.length <= maxLegs)
       .map((m) => ({
@@ -560,12 +574,22 @@ export function deepScanGame(opts: {
         dist:
           Math.abs(Math.log(m.combinedOdds) - Math.log(target)) /
           Math.log(Math.max(target, 2)),
-      }))
-      .filter(
-        (x) =>
-          x.multi.combinedOdds >= target * 0.55 &&
-          x.multi.combinedOdds <= target * 1.6,
-      )
+      }));
+
+    let inBand = scored.filter(
+      (x) =>
+        x.multi.combinedOdds >= target * 0.55 &&
+        x.multi.combinedOdds <= target * 1.6,
+    );
+
+    // If caps make the target band unreachable, still return closest builds
+    let usedFallback = false;
+    if (!inBand.length && scored.length) {
+      inBand = scored;
+      usedFallback = true;
+    }
+
+    const filtered = inBand
       .sort((a, b) => {
         const scoreA =
           a.multi.edgeScore -
@@ -594,13 +618,13 @@ export function deepScanGame(opts: {
       });
       if (tooClose) continue;
       if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) continue;
-      if (!m.rationale.some((r) => r.includes("max single") || r.includes("Target-price"))) {
+      if (!m.rationale.some((r) => r.includes("Target-price") || r.includes("max single"))) {
         m.rationale.push(
-          `Target-price rule: max ${maxLegs} legs, each ≤ $${effectiveMax.toFixed(2)}${
+          `Target-price rule: ~$${target} · max ${maxLegs} legs · each ≤ $${effectiveMax.toFixed(2)}${
             effectiveMax > maxSingle + 1e-9
-              ? ` (relaxed from $${maxSingle.toFixed(2)} for live prices)`
+              ? ` (raised from $${maxSingle.toFixed(2)} to reach target)`
               : ""
-          }`,
+          }${usedFallback ? " · closest available under your caps" : ""}`,
         );
       }
       selected.push(m);
