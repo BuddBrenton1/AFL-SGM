@@ -239,8 +239,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
         // Still scan with model legs — Odds API often has no board yet
       } else {
         const boardLegs = legsFromSportsbetBoard(board, game, bookmaker);
-        const minLegsNeeded =
-          mode === "legs" ? Math.min(25, Math.max(2, req.legCount ?? 3)) : 2;
+        const minLegsNeeded = Math.min(25, Math.max(2, req.legCount ?? 10));
         const livePriced = legs.filter((l) => l.sportsbetOdds != null);
 
         if (boardLegs.length >= minLegsNeeded) {
