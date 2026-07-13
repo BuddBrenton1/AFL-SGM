@@ -3,6 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatOdds } from "@/lib/engine/odds";
 import {
+  formatAud,
+  isOpenPaperTrade,
+  loadPaperBankroll,
+  PAPER_STARTING_CASH,
+  paperProfit,
+  paperReturn,
+  persistPaperBankroll,
+  resetPaperBankroll,
+  summarizePaperBankroll,
+} from "@/lib/paper-bankroll";
+import {
   loadSavedSgms,
   persistSavedSgms,
   removeSavedSgm,
@@ -57,6 +68,7 @@ function legTone(outcome: string) {
 
 export function SavedSgmsSection() {
   const [items, setItems] = useState<SavedSgm[]>([]);
+  const [startingCash, setStartingCash] = useState(PAPER_STARTING_CASH);
   const [hydrated, setHydrated] = useState(false);
   const [checking, setChecking] = useState(false);
   const [lastPoll, setLastPoll] = useState<string | null>(null);
@@ -65,6 +77,7 @@ export function SavedSgmsSection() {
 
   useEffect(() => {
     setItems(loadSavedSgms());
+    setStartingCash(loadPaperBankroll().startingCash);
     setHydrated(true);
   }, []);
 
@@ -113,13 +126,13 @@ export function SavedSgmsSection() {
     const reload = () => {
       const list = loadSavedSgms();
       setItems(list);
+      setStartingCash(loadPaperBankroll().startingCash);
       void refreshResults(list);
     };
     window.addEventListener("bounce-saved-sgms", reload);
     return () => window.removeEventListener("bounce-saved-sgms", reload);
   }, [hydrated, refreshResults]);
 
-  // Initial settle + live poll while any SGM is still open
   useEffect(() => {
     if (!hydrated) return;
     void refreshResults(itemsRef.current);
@@ -137,19 +150,25 @@ export function SavedSgmsSection() {
     return () => window.clearInterval(id);
   }, [hydrated, refreshResults]);
 
-  const openCount = useMemo(
-    () =>
-      items.filter(
-        (i) =>
-          i.multiOutcome !== "won" &&
-          i.multiOutcome !== "lost" &&
-          i.multiOutcome !== "void",
-      ).length,
-    [items],
+  const bankroll = useMemo(
+    () => summarizePaperBankroll(items, startingCash),
+    [items, startingCash],
   );
 
   function handleDelete(id: string) {
     setItems((prev) => removeSavedSgm(id, prev));
+  }
+
+  function handleResetBankroll() {
+    const ok = window.confirm(
+      `Reset paper bankroll to ${formatAud(PAPER_STARTING_CASH)} and clear all paper trades?`,
+    );
+    if (!ok) return;
+    persistSavedSgms([]);
+    const next = resetPaperBankroll(PAPER_STARTING_CASH);
+    setItems([]);
+    setStartingCash(next.startingCash);
+    window.dispatchEvent(new Event("bounce-saved-sgms"));
   }
 
   if (!hydrated) return null;
@@ -165,12 +184,12 @@ export function SavedSgmsSection() {
             className="font-[family-name:var(--font-teko)] text-4xl text-[var(--turf)]"
             style={{ fontWeight: 600 }}
           >
-            Saved SGMs
+            Paper trades
           </h2>
           <p className="text-sm text-[var(--muted)]">
-            Tracks live. Props settle from the box score. Scratched / unused
-            players void the SGM (Sportsbet-style). Limited minutes are flagged
-            when involvement stays very low.
+            ${PAPER_STARTING_CASH.toLocaleString("en-AU")} play money. Place a
+            stake on scan results, then settle from the live box score — same
+            idea as a crypto paper scanner.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -184,9 +203,16 @@ export function SavedSgmsSection() {
               {checking ? "Updating…" : "Refresh now"}
             </button>
           )}
-          {openCount > 0 && (
+          <button
+            type="button"
+            onClick={handleResetBankroll}
+            className="border border-[var(--line)] bg-[var(--bg-panel)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--muted)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
+          >
+            Reset $10k
+          </button>
+          {bankroll.openCount > 0 && (
             <span className="text-xs font-semibold text-[var(--muted)]">
-              {openCount} live · auto every {POLL_MS / 1000}s
+              {bankroll.openCount} live · auto every {POLL_MS / 1000}s
             </span>
           )}
           {lastPoll && (
@@ -202,18 +228,81 @@ export function SavedSgmsSection() {
         </div>
       </div>
 
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="border border-[var(--line)] bg-[var(--bg-panel)] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+            Available
+          </p>
+          <p
+            className="font-[family-name:var(--font-teko)] text-3xl text-[var(--ink)]"
+            style={{ fontWeight: 600 }}
+          >
+            {formatAud(bankroll.availableCash)}
+          </p>
+        </div>
+        <div className="border border-[var(--line)] bg-[var(--bg-panel)] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+            In play
+          </p>
+          <p
+            className="font-[family-name:var(--font-teko)] text-3xl text-[var(--leather)]"
+            style={{ fontWeight: 600 }}
+          >
+            {formatAud(bankroll.openStake)}
+          </p>
+        </div>
+        <div className="border border-[var(--line)] bg-[var(--bg-panel)] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+            Realized P&amp;L
+          </p>
+          <p
+            className={`font-[family-name:var(--font-teko)] text-3xl ${
+              bankroll.realizedPnl > 0
+                ? "text-[var(--orange)]"
+                : bankroll.realizedPnl < 0
+                  ? "text-[#ffb4a0]"
+                  : "text-[var(--ink)]"
+            }`}
+            style={{ fontWeight: 600 }}
+          >
+            {bankroll.realizedPnl > 0 ? "+" : ""}
+            {formatAud(bankroll.realizedPnl)}
+          </p>
+        </div>
+        <div className="border border-[var(--line)] bg-[var(--bg-panel)] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+            Equity · start {formatAud(bankroll.startingCash)}
+          </p>
+          <p
+            className="font-[family-name:var(--font-teko)] text-3xl text-[var(--ink)]"
+            style={{ fontWeight: 600 }}
+          >
+            {formatAud(bankroll.equity)}
+          </p>
+        </div>
+      </div>
+
       {items.length === 0 ? (
         <p className="border border-[var(--line)] bg-[var(--bg-panel)] p-5 text-sm text-[var(--muted)]">
-          No saved multis yet. Hit <strong>Save SGM</strong> on a scan result to
-          track it here.
+          No paper trades yet. On a scan result, set a stake and hit{" "}
+          <strong className="text-[var(--ink)]">Place paper bet</strong>.
         </p>
       ) : (
         <div className="grid gap-4">
           {items.map((item) => {
             const hits = item.legResults.filter((r) => r.outcome === "won").length;
-            const misses = item.legResults.filter((r) => r.outcome === "lost").length;
-            const voids = item.legResults.filter((r) => r.outcome === "void").length;
-            const pending = item.legResults.filter((r) => r.outcome === "pending").length;
+            const misses = item.legResults.filter(
+              (r) => r.outcome === "lost",
+            ).length;
+            const voids = item.legResults.filter(
+              (r) => r.outcome === "void",
+            ).length;
+            const pending = item.legResults.filter(
+              (r) => r.outcome === "pending",
+            ).length;
+            const stake = item.stake ?? 0;
+            const profit = paperProfit(item);
+            const toReturn = stake > 0 ? stake * item.combinedOdds : 0;
 
             return (
               <article
@@ -223,7 +312,8 @@ export function SavedSgmsSection() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-                      Round {item.round} · {item.venue} · saved{" "}
+                      Round {item.round} · {item.venue} ·{" "}
+                      {stake > 0 ? "paper bet" : "watch"} ·{" "}
                       {new Date(item.savedAt).toLocaleString("en-AU", {
                         day: "numeric",
                         month: "short",
@@ -247,7 +337,8 @@ export function SavedSgmsSection() {
                         {item.gameStatus.homeScore ?? "–"} –{" "}
                         {item.gameStatus.awayScore ?? "–"}{" "}
                         {item.gameStatus.awayTeam}
-                        {item.gameStatus.complete >= 100 && item.gameStatus.winner
+                        {item.gameStatus.complete >= 100 &&
+                        item.gameStatus.winner
                           ? ` · ${item.gameStatus.winner} won`
                           : ""}
                       </p>
@@ -264,6 +355,34 @@ export function SavedSgmsSection() {
                     >
                       {formatOdds(item.combinedOdds)}
                     </p>
+                    {stake > 0 && (
+                      <p className="mt-1 text-sm text-[var(--ink)]">
+                        Stake {formatAud(stake)}
+                        {isOpenPaperTrade(item.multiOutcome) ? (
+                          <span className="text-[var(--muted)]">
+                            {" "}
+                            · to return {formatAud(toReturn)}
+                          </span>
+                        ) : profit != null ? (
+                          <span
+                            className={
+                              profit > 0
+                                ? "text-[var(--orange)]"
+                                : profit < 0
+                                  ? "text-[#ffb4a0]"
+                                  : "text-[var(--muted)]"
+                            }
+                          >
+                            {" "}
+                            · {profit > 0 ? "+" : ""}
+                            {formatAud(profit)}
+                            {item.multiOutcome === "won"
+                              ? ` (paid ${formatAud(paperReturn(item))})`
+                              : ""}
+                          </span>
+                        ) : null}
+                      </p>
+                    )}
                     <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
                       <span
                         className={`inline-block px-2 py-1 text-xs font-semibold ${outcomeTone(item.multiOutcome)}`}
@@ -279,7 +398,9 @@ export function SavedSgmsSection() {
                       onClick={() => handleDelete(item.id)}
                       className="mt-2 text-xs font-semibold text-[var(--muted)] underline"
                     >
-                      Remove
+                      {stake > 0 && isOpenPaperTrade(item.multiOutcome)
+                        ? "Cancel & refund"
+                        : "Remove"}
                     </button>
                   </div>
                 </div>
@@ -299,7 +420,9 @@ export function SavedSgmsSection() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="font-medium text-[var(--ink)]">
-                            <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
+                            <span className="mr-2 text-[var(--muted)]">
+                              {i + 1}.
+                            </span>
                             {leg.label}
                             {result.outcome === "won" && (
                               <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111]">
@@ -325,14 +448,19 @@ export function SavedSgmsSection() {
                                   Watch
                                 </span>
                               )}
-                            {result.outcome === "pending" && result.actual != null && (
-                              <span className="ml-2 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--orange)]">
-                                Live {result.actual}
-                                {leg.threshold != null ? `/${leg.threshold}+` : ""}
-                              </span>
-                            )}
+                            {result.outcome === "pending" &&
+                              result.actual != null && (
+                                <span className="ml-2 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--orange)]">
+                                  Live {result.actual}
+                                  {leg.threshold != null
+                                    ? `/${leg.threshold}+`
+                                    : ""}
+                                </span>
+                              )}
                           </span>
-                          <span className={`font-semibold ${legTone(result.outcome)}`}>
+                          <span
+                            className={`font-semibold ${legTone(result.outcome)}`}
+                          >
                             {formatOdds(leg.sportsbetOdds ?? leg.odds)}
                             {result.outcome === "void"
                               ? " · void"
@@ -349,9 +477,9 @@ export function SavedSgmsSection() {
                         )}
                       </li>
                     );
-                })}
-              </ol>
-            </article>
+                  })}
+                </ol>
+              </article>
             );
           })}
         </div>
@@ -364,12 +492,16 @@ export function useSavedSgmIds(): {
   savedIds: Set<string>;
   saveMulti: (item: SavedSgm) => void;
   refreshIds: () => void;
+  availableCash: number;
 } {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [availableCash, setAvailableCash] = useState(PAPER_STARTING_CASH);
 
   const refreshIds = useCallback(() => {
     const list = loadSavedSgms();
+    const bank = loadPaperBankroll();
     setSavedIds(new Set(list.map((x) => x.multiId)));
+    setAvailableCash(summarizePaperBankroll(list, bank.startingCash).availableCash);
   }, []);
 
   useEffect(() => {
@@ -378,7 +510,17 @@ export function useSavedSgmIds(): {
 
   const saveMulti = useCallback(
     (item: SavedSgm) => {
-      upsertSavedSgm(item, loadSavedSgms());
+      const list = loadSavedSgms();
+      const bank = loadPaperBankroll();
+      const summary = summarizePaperBankroll(list, bank.startingCash);
+      const stake = item.stake ?? 0;
+      if (stake > 0 && stake > summary.availableCash + 1e-9) {
+        throw new Error(
+          `Not enough paper cash (need ${formatAud(stake)}, have ${formatAud(summary.availableCash)})`,
+        );
+      }
+      upsertSavedSgm(item, list);
+      persistPaperBankroll(bank);
       refreshIds();
       window.dispatchEvent(new Event("bounce-saved-sgms"));
     },
@@ -395,5 +537,5 @@ export function useSavedSgmIds(): {
     };
   }, [refreshIds]);
 
-  return { savedIds, saveMulti, refreshIds };
+  return { savedIds, saveMulti, refreshIds, availableCash };
 }

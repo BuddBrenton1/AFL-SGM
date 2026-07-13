@@ -9,6 +9,10 @@ import {
 } from "@/lib/bookmakers";
 import type { ScanResult } from "@/lib/types";
 import { formatOdds } from "@/lib/engine/odds";
+import {
+  formatAud,
+  PAPER_DEFAULT_STAKE,
+} from "@/lib/paper-bankroll";
 import { createSavedSgm } from "@/lib/saved-sgm";
 import { formatSgmForBookmaker } from "@/lib/sgm-export";
 import { SavedSgmsSection, useSavedSgmIds } from "./components/SavedSgms";
@@ -95,9 +99,11 @@ export default function HomePage() {
       ),
     [result, bookmaker],
   );
-  const { savedIds, saveMulti } = useSavedSgmIds();
+  const { savedIds, saveMulti, availableCash } = useSavedSgmIds();
   const [saveFlash, setSaveFlash] = useState<string | null>(null);
   const [copyFlash, setCopyFlash] = useState<string | null>(null);
+  const [paperStake, setPaperStake] = useState(PAPER_DEFAULT_STAKE);
+  const [paperError, setPaperError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -247,7 +253,7 @@ export default function HomePage() {
               Scanner
             </a>
             <a href="#saved" className="nav-link">
-              Saved
+              Paper
             </a>
             <div
               className="hidden items-center gap-2 border border-[var(--line)] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-strong)] md:flex"
@@ -836,25 +842,62 @@ export default function HomePage() {
 
         {result && (
           <div className="mt-4">
-            <div className="mb-6 flex flex-wrap gap-4 text-sm text-[var(--muted)]">
-              <span>
-                {result.gamesScanned} games · {result.candidatesEvaluated} legs ·{" "}
-                {result.combinationsChecked.toLocaleString()} combos
-              </span>
-              <span>
-                Mode: ~${result.target.targetOdds} · ≤{result.target.legCount ?? 10}{" "}
-                legs · each ≤ $
-                {(result.target.maxSingleLegPrice ?? 1.65).toFixed(2)}
-              </span>
-              {(result.target.minConfidence ?? 0) > 0 && (
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+              <div className="flex flex-wrap gap-4 text-sm text-[var(--muted)]">
                 <span>
-                  Confidence ≥ {Math.round((result.target.minConfidence ?? 0) * 100)}%
+                  {result.gamesScanned} games · {result.candidatesEvaluated} legs ·{" "}
+                  {result.combinationsChecked.toLocaleString()} combos
                 </span>
-              )}
-              {result.target.sportsbetOnly && (
-                <span>Prefer {resultBook.label} prices</span>
-              )}
+                <span>
+                  Mode: ~${result.target.targetOdds} · ≤{result.target.legCount ?? 10}{" "}
+                  legs · each ≤ $
+                  {(result.target.maxSingleLegPrice ?? 1.65).toFixed(2)}
+                </span>
+                {(result.target.minConfidence ?? 0) > 0 && (
+                  <span>
+                    Confidence ≥{" "}
+                    {Math.round((result.target.minConfidence ?? 0) * 100)}%
+                  </span>
+                )}
+                {result.target.sportsbetOnly && (
+                  <span>Prefer {resultBook.label} prices</span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-right">
+                  <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    Paper stake
+                  </span>
+                  <div className="mt-1 flex items-center gap-1">
+                    <span className="text-sm text-[var(--muted)]">$</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={Math.max(1, Math.floor(availableCash))}
+                      step={5}
+                      value={paperStake}
+                      onChange={(e) =>
+                        setPaperStake(
+                          Math.max(1, Number(e.target.value) || PAPER_DEFAULT_STAKE),
+                        )
+                      }
+                      className="w-24 border border-[var(--line)] bg-black/30 px-2 py-1.5 text-sm text-[var(--ink)]"
+                    />
+                  </div>
+                </label>
+                <a
+                  href="#saved"
+                  className="border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:border-[var(--orange)] hover:text-[var(--orange)]"
+                >
+                  Cash {formatAud(availableCash)}
+                </a>
+              </div>
             </div>
+            {paperError && (
+              <p className="mb-4 border border-[#5a3030] bg-[#2a1818] px-3 py-2 text-sm text-[#ffb4a0]">
+                {paperError}
+              </p>
+            )}
 
             <div className="grid gap-4">
               {result.multis.map((m, idx) => (
@@ -930,28 +973,44 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => {
-                            const saved = createSavedSgm(m, {
-                              bookmaker: resultBook.id,
-                              bookmakerLabel: resultBook.label,
-                            });
-                            saveMulti(saved);
-                            setSaveFlash(m.id);
-                            setTimeout(() => setSaveFlash(null), 2000);
+                            setPaperError(null);
+                            try {
+                              const saved = createSavedSgm(m, {
+                                bookmaker: resultBook.id,
+                                bookmakerLabel: resultBook.label,
+                                stake: paperStake,
+                              });
+                              saveMulti(saved);
+                              setSaveFlash(m.id);
+                              setTimeout(() => setSaveFlash(null), 2000);
+                              document
+                                .getElementById("saved")
+                                ?.scrollIntoView({ behavior: "smooth" });
+                            } catch (e) {
+                              setPaperError(
+                                e instanceof Error
+                                  ? e.message
+                                  : "Could not place paper bet",
+                              );
+                            }
                           }}
-                          className={`px-3 py-1.5 text-xs font-semibold transition ${
+                          disabled={paperStake > availableCash + 1e-9}
+                          className={`px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                             savedIds.has(m.id) || saveFlash === m.id
                               ? "bg-[var(--orange)] text-[#111]"
                               : "border border-[var(--orange)] text-[var(--orange)] hover:bg-[var(--flood-soft)]"
                           }`}
                         >
                           {savedIds.has(m.id) || saveFlash === m.id
-                            ? "Saved ✓"
-                            : "Save SGM"}
+                            ? "Bet placed ✓"
+                            : `Place paper bet · ${formatAud(paperStake)}`}
                         </button>
                       </div>
                       <p className="mt-2 max-w-xs text-right text-[10px] leading-snug text-[var(--muted)]">
-                        One-click SGM slips aren&apos;t offered by AU books —
-                        open the match, then paste/rebuild from the checklist.
+                        Paper only — to return{" "}
+                        {formatAud(paperStake * m.combinedOdds)}. One-click SGM
+                        slips aren&apos;t offered by AU books; open the match to
+                        rebuild live.
                       </p>
                     </div>
                   </div>

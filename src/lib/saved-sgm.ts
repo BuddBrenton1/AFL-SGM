@@ -58,6 +58,8 @@ export interface SavedSgm {
   confidence: number;
   sportsbetCombinedOdds?: number | null;
   sportsbetLink?: string;
+  /** Paper stake in AUD — omit / 0 = watchlist only */
+  stake?: number;
   legs: SavedLegSnapshot[];
   gameStatus: SavedGameStatus;
   legResults: SavedLegResult[];
@@ -76,9 +78,13 @@ function parseMatchup(matchup: string): { homeTeam: string; awayTeam: string } {
 
 export function createSavedSgm(
   multi: SgmMulti,
-  opts?: { bookmaker?: string; bookmakerLabel?: string },
+  opts?: { bookmaker?: string; bookmakerLabel?: string; stake?: number },
 ): SavedSgm {
   const { homeTeam, awayTeam } = parseMatchup(multi.matchup);
+  const stake =
+    opts?.stake != null && Number.isFinite(opts.stake) && opts.stake > 0
+      ? Math.round(opts.stake * 100) / 100
+      : undefined;
   return {
     id: `sgm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     savedAt: new Date().toISOString(),
@@ -93,6 +99,7 @@ export function createSavedSgm(
     confidence: multi.confidence,
     sportsbetCombinedOdds: multi.sportsbetCombinedOdds,
     sportsbetLink: multi.sportsbetLink,
+    stake,
     legs: multi.legs.map((l) => ({
       id: l.id,
       market: l.market,
