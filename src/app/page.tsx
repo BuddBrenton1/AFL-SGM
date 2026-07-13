@@ -494,6 +494,10 @@ export default function HomePage() {
                     </button>
                   ))}
                 </div>
+                <p className="mt-2 text-xs text-[var(--muted)]">
+                  Hard ceiling — Bounce prefers legs near this price (not tiny
+                  $1.05 fillers).
+                </p>
               </label>
 
               <label className="block">
@@ -1016,9 +1020,10 @@ export default function HomePage() {
               <div className="mt-4 space-y-2 border border-[var(--line)] bg-black/25 p-4 text-sm text-[var(--muted)]">
                 <p className="font-semibold text-[var(--ink)]">No multis found</p>
                 <p>
-                  {result.target.sportsbetOnly
-                    ? `No multis found even with Bounce fill-ins. Try fewer legs, a wider odds band, lower confidence, or more fixtures.`
-                    : "Try a wider odds band, fewer legs, lower confidence, or select more fixtures."}
+                  Nothing landed near ~${result.target.targetOdds} with ≤$
+                  {(result.target.maxSingleLegPrice ?? 1.65).toFixed(2)} legs and
+                  ≤{result.target.legCount ?? 10} selections. Raise max per-leg /
+                  max legs, lower the target, or ease confidence.
                 </p>
               </div>
             )}
