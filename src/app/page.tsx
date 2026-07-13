@@ -954,17 +954,24 @@ export default function HomePage() {
                           {leg.sportsbetOdds != null ? (
                             <>
                               <span className="font-semibold text-[var(--turf)]">
-                                {resultBook.shortLabel} {formatOdds(leg.sportsbetOdds)}
+                                {resultBook.shortLabel}{" "}
+                                {formatOdds(leg.sportsbetOdds)}
                               </span>
-                              {leg.modelOdds != null && (
-                                <span className="ml-2 text-xs">
-                                  model {formatOdds(leg.modelOdds)}
-                                </span>
-                              )}
+                              <span className="ml-1">
+                                · {(leg.confidence * 100).toFixed(0)}%
+                              </span>
+                              {leg.modelOdds != null &&
+                                Math.abs(leg.modelOdds - leg.sportsbetOdds) >
+                                  0.02 && (
+                                  <span className="ml-2 text-xs">
+                                    model {formatOdds(leg.modelOdds)}
+                                  </span>
+                                )}
                             </>
                           ) : (
                             <>
-                              {formatOdds(leg.odds)} · {(leg.probability * 100).toFixed(0)}%
+                              {formatOdds(leg.odds)} ·{" "}
+                              {(leg.confidence * 100).toFixed(0)}%
                             </>
                           )}
                         </span>

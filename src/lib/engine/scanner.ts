@@ -6,6 +6,11 @@ export const MAX_LEGS = 25;
 /** In target-price mode, every leg must be at or under this decimal price. */
 export const MAX_SINGLE_LEG_PRICE = 1.35;
 
+/** Price used for caps, products and UI — live book when present, else model. */
+export function legPrice(leg: CandidateLeg): number {
+  return leg.sportsbetOdds != null ? leg.sportsbetOdds : leg.odds;
+}
+
 function combinations<T>(arr: T[], k: number): T[][] {
   const out: T[][] = [];
   const n = arr.length;
@@ -90,7 +95,7 @@ function buildMulti(
   const penalty = correlationPenalty(legs);
   const rawProb = combineIndependentProb(legs.map((l) => l.probability));
   const adjustedProb = Math.max(0.001, rawProb * (1 - penalty));
-  const combinedOdds = combineOdds(legs.map((l) => l.odds));
+  const combinedOdds = combineOdds(legs.map((l) => legPrice(l)));
   const sbPrices = legs.map((l) => l.sportsbetOdds).filter((x): x is number => x != null);
   const sportsbetCoverage = sbPrices.length / Math.max(legs.length, 1);
   const sportsbetCombinedOdds =
@@ -146,7 +151,7 @@ function buildMulti(
     venue: gameMeta.venue,
     round: gameMeta.round,
     legs,
-    combinedOdds: sportsbetCombinedOdds ?? combinedOdds,
+    combinedOdds,
     sportsbetCombinedOdds,
     sportsbetCoverage,
     sportsbetLink: gameMeta.sportsbetLink,
@@ -380,11 +385,11 @@ function buildTowardTargetPrice(
   );
 
   const shortPool = pool
-    .filter((l) => l.odds <= maxSinglePrice + 1e-9)
+    .filter((l) => legPrice(l) <= maxSinglePrice + 1e-9)
     .sort(
       (a, b) =>
         // Prefer higher prices (closer to max) then edge
-        b.odds - a.odds || legEdge(b) - legEdge(a),
+        legPrice(b) - legPrice(a) || legEdge(b) - legEdge(a),
     );
 
   let checked = 0;
@@ -406,10 +411,10 @@ function buildTowardTargetPrice(
     let product = 1;
 
     if (start) {
-      if (start.odds > maxSinglePrice + 1e-9) return null;
+      if (legPrice(start) > maxSinglePrice + 1e-9) return null;
       picked.push(start);
       used.add(start.id);
-      product *= start.odds;
+      product *= legPrice(start);
       checked++;
     }
 
@@ -419,12 +424,12 @@ function buildTowardTargetPrice(
 
       for (const cand of ordered) {
         if (used.has(cand.id)) continue;
-        if (cand.odds > maxSinglePrice + 1e-9) continue;
+        const candOdds = legPrice(cand);
+        if (candOdds > maxSinglePrice + 1e-9) continue;
         if (!canAdd(picked, cand)) continue;
 
-        const nextProduct = product * cand.odds;
-        // Don't take a leg that blows past target by a lot when we're already close
-        if (product >= target * 0.8 && nextProduct > target * 1.45) continue;
+        const nextProduct = product * candOdds;
+        if (product >= target * 0.85 && nextProduct > target * 1.35) continue;
 
         const distanceBefore = Math.abs(
           Math.log(Math.max(product, 1.0001)) - Math.log(target),
@@ -433,16 +438,15 @@ function buildTowardTargetPrice(
         const progress = distanceBefore - distanceAfter;
         const overshoot =
           nextProduct > target ? (nextProduct / target - 1) * 2.5 : 0;
-        const nearMaxBonus = preferNearMax ? priceFit(cand.odds) * 1.1 : 0;
-        // When still well under target, strongly prefer longer legs
+        const nearMaxBonus = preferNearMax ? priceFit(candOdds) * 1.1 : 0;
         const underTargetBoost =
-          product < target * 0.75 ? Math.log(cand.odds) * 1.4 : 0;
+          product < target * 0.85 ? Math.log(candOdds) * 1.6 : 0;
 
         const score =
-          progress * 4 +
+          progress * 4.5 +
           nearMaxBonus +
           underTargetBoost +
-          legEdge(cand) * 0.35 -
+          legEdge(cand) * 0.3 -
           overshoot -
           correlationPenalty([...picked, cand]) * 0.35;
 
@@ -456,18 +460,19 @@ function buildTowardTargetPrice(
       if (!best) break;
       picked.push(best);
       used.add(best.id);
-      product *= best.odds;
+      product *= legPrice(best);
     }
 
-    // Must land reasonably near the target — reject tiny products
     if (picked.length < MIN_LEGS) return null;
-    if (product < target * 0.7) return null;
-    if (product > target * 1.55) return null;
+    if (product < target * 0.88) return null;
+    if (product > target * 1.22) return null;
+    const tooCheap = picked.filter((l) => legPrice(l) < minPreferred - 1e-9).length;
+    if (tooCheap > Math.max(1, Math.floor(picked.length * 0.25))) return null;
     return picked;
   }
 
   // Prefer pool near the user's max price
-  const nearMaxPool = shortPool.filter((l) => l.odds >= minPreferred - 1e-9);
+  const nearMaxPool = shortPool.filter((l) => legPrice(l) >= minPreferred - 1e-9);
   const workPool = nearMaxPool.length >= Math.min(8, legCap + 2) ? nearMaxPool : shortPool;
 
   const primary = chase(workPool, undefined, true);
@@ -478,21 +483,18 @@ function buildTowardTargetPrice(
     if (variant) combos.push(variant);
   }
 
-  // Confidence-biased variants still respecting near-max preference
   const byConf = [...workPool].sort(
-    (a, b) => b.confidence - a.confidence || b.odds - a.odds,
+    (a, b) => b.confidence - a.confidence || legPrice(b) - legPrice(a),
   );
   const confStack = chase(byConf, undefined, true);
   if (confStack) combos.push(confStack);
 
-  // A few shuffles for diversity
   for (let i = 0; i < Math.min(6, maxResults * 2); i++) {
     const shuffled = [...workPool].sort(() => Math.random() - 0.5);
     const v = chase(shuffled, undefined, true);
     if (v) combos.push(v);
   }
 
-  // If near-max pool couldn't hit target, allow full short pool as last resort
   if (!combos.length && workPool !== shortPool) {
     const fallback = chase(shortPool, undefined, false);
     if (fallback) combos.push(fallback);
@@ -556,15 +558,14 @@ export function deepScanGame(opts: {
       Math.max(1.12, effectiveMax * 0.72),
     );
 
-    let shortLegs = sourceLegs.filter((l) => l.odds <= effectiveMax + 1e-9);
-    // Prefer legs near the selected max price
-    const nearMax = shortLegs.filter((l) => l.odds >= minPreferred - 1e-9);
+    let shortLegs = sourceLegs.filter((l) => legPrice(l) <= effectiveMax + 1e-9);
+    const nearMax = shortLegs.filter((l) => legPrice(l) >= minPreferred - 1e-9);
     if (nearMax.length >= Math.min(8, maxLegs + 2)) {
       shortLegs = nearMax;
     }
 
     const rankedShort = [...shortLegs].sort(
-      (a, b) => b.odds - a.odds || legEdge(b) - legEdge(a),
+      (a, b) => legPrice(b) - legPrice(a) || legEdge(b) - legEdge(a),
     );
     const pool = rankedShort.slice(0, Math.min(rankedShort.length, 80));
     const candidatesEvaluated = opts.legs.length;
@@ -581,16 +582,15 @@ export function deepScanGame(opts: {
     const multis: SgmMulti[] = [];
 
     for (const combo of combos) {
-      if (combo.some((l) => l.odds > effectiveMax + 1e-9)) continue;
+      if (combo.some((l) => legPrice(l) > effectiveMax + 1e-9)) continue;
       if (combo.length > maxLegs) continue;
       if (hasConflicts(combo)) continue;
       multis.push(buildMulti(gameMeta, combo));
     }
 
-    // Only enumerate fixed sizes that can mathematically reach ~75% of target
     const minLegsForTarget = Math.max(
       MIN_LEGS,
-      Math.ceil(Math.log(target * 0.75) / Math.log(Math.max(effectiveMax, 1.01))),
+      Math.ceil(Math.log(target * 0.88) / Math.log(Math.max(effectiveMax, 1.01))),
     );
     const fixedSizes = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 20, 22, 25].filter(
       (k) => k <= maxLegs && k >= minLegsForTarget,
@@ -600,20 +600,20 @@ export function deepScanGame(opts: {
       const { combos: fixed, checked: c } = enumerateCombos(pool, k, maxResults);
       combinationsChecked += c;
       for (const combo of fixed) {
-        if (combo.some((l) => l.odds > effectiveMax + 1e-9)) continue;
+        if (combo.some((l) => legPrice(l) > effectiveMax + 1e-9)) continue;
         if (hasConflicts(combo)) continue;
-        const product = combo.reduce((acc, l) => acc * l.odds, 1);
-        if (product < target * 0.75 || product > target * 1.5) continue;
+        const product = combo.reduce((acc, l) => acc * legPrice(l), 1);
+        if (product < target * 0.88 || product > target * 1.22) continue;
         multis.push(buildMulti(gameMeta, combo));
       }
     }
 
     const filtered = multis
-      .filter((m) => m.legs.every((l) => l.odds <= effectiveMax + 1e-9))
+      .filter((m) => m.legs.every((l) => legPrice(l) <= effectiveMax + 1e-9))
       .filter((m) => m.legs.length <= maxLegs)
       .filter(
         (m) =>
-          m.combinedOdds >= target * 0.75 && m.combinedOdds <= target * 1.45,
+          m.combinedOdds >= target * 0.88 && m.combinedOdds <= target * 1.22,
       )
       .map((m) => ({
         multi: m,
@@ -621,19 +621,18 @@ export function deepScanGame(opts: {
           Math.abs(Math.log(m.combinedOdds) - Math.log(target)) /
           Math.log(Math.max(target, 2)),
         avgLeg:
-          m.legs.reduce((a, l) => a + l.odds, 0) / Math.max(m.legs.length, 1),
+          m.legs.reduce((a, l) => a + legPrice(l), 0) / Math.max(m.legs.length, 1),
       }))
       .sort((a, b) => {
-        // Closest to target first, then higher average leg price, then edge
         const scoreA =
-          -a.dist * 2.2 +
-          a.avgLeg * 0.35 +
-          a.multi.edgeScore * 0.4 +
+          -a.dist * 2.8 +
+          a.avgLeg * 0.4 +
+          a.multi.edgeScore * 0.35 +
           a.multi.sportsbetCoverage * 0.08;
         const scoreB =
-          -b.dist * 2.2 +
-          b.avgLeg * 0.35 +
-          b.multi.edgeScore * 0.4 +
+          -b.dist * 2.8 +
+          b.avgLeg * 0.4 +
+          b.multi.edgeScore * 0.35 +
           b.multi.sportsbetCoverage * 0.08;
         return scoreB - scoreA;
       })
@@ -654,7 +653,7 @@ export function deepScanGame(opts: {
       if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) continue;
       if (!m.rationale.some((r) => r.includes("Target-price"))) {
         m.rationale.push(
-          `Target ~$${target} · ≤${maxLegs} legs · each ≤ $${effectiveMax.toFixed(2)} (prefer near max)`,
+          `Target ~$${target} · ≤${maxLegs} legs · each ≤ $${effectiveMax.toFixed(2)} (hard cap)`,
         );
       }
       selected.push(m);

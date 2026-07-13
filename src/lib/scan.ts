@@ -304,9 +304,29 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     }
   }
 
+  // Absolute last line of defence — never return a multi that breaks the user's
+  // max per-leg price or sits wildly off the target total.
+  const legCap = Math.max(1.01, Number(req.maxSingleLegPrice ?? 1.65));
+  const target = Math.max(1.5, Number(req.targetOdds ?? 10));
+  const beforeSanitize = multis.length;
+  multis = multis.filter((m) => {
+    const legsOk = m.legs.every((leg) => {
+      const p = Number(leg.sportsbetOdds ?? leg.odds);
+      return Number.isFinite(p) && p <= legCap + 0.001;
+    });
+    if (!legsOk) return false;
+    const total = Number(m.combinedOdds);
+    if (!Number.isFinite(total)) return false;
+    return total >= target * 0.88 && total <= target * 1.22;
+  });
+  if (beforeSanitize > 0 && multis.length === 0) {
+    scanNotes.push(
+      `No SGM stayed within ~$${target} (±12%) with every leg ≤ $${legCap.toFixed(2)} — try a higher max leg price, more legs, or a lower target`,
+    );
+  }
+
   multis = multis.slice(0, maxResults);
 
-  const legCap = req.maxSingleLegPrice ?? 1.65;
   scanNotes.push(
     `Target ~$${req.targetOdds ?? 15} · max ${req.legCount ?? 10} legs · each ≤ $${legCap.toFixed(2)}`,
   );
