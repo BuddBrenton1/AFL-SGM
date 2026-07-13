@@ -3,7 +3,10 @@ import {
   collectBestFormLegs,
   hitEveryRecentGame,
 } from "../src/lib/engine/best-form";
-import { applyLiveFormToPlayers, loadLiveFormForTeams } from "../src/lib/live-form";
+import {
+  applyLiveFormToPlayers,
+  loadLiveFormForTeams,
+} from "../src/lib/live-form";
 import { getPlayer } from "../src/lib/players";
 import type { CandidateLeg, EnrichedGame } from "../src/lib/types";
 
@@ -17,8 +20,6 @@ async function main() {
   assert.equal(applied.matched, 1);
   const player = applied.players[0];
   assert.equal(player.formSource, "espn");
-  console.log("Dangerfield ESPN D", player.form.last5Disposals);
-  console.log("14+ rate", player.form.disposalHitRates["14+"]);
 
   const game = {
     id: 1,
@@ -35,7 +36,9 @@ async function main() {
     label: "Patrick Dangerfield 14+ Disposals",
     shortLabel: "Danger 14+",
     playerId: "gee-danger",
+    playerName: "Patrick Dangerfield",
     threshold: 14,
+    sportsbetPoint: 13.5,
     probability: 0.7,
     odds: 1.3,
     sportsbetOdds: 1.3,
@@ -45,9 +48,39 @@ async function main() {
     correlationGroup: "disp:gee-danger",
   };
 
-  const locks = collectBestFormLegs([leg14], game, { requireSportsbet: true });
-  assert.equal(locks.length, 0, "Dangerfield 14+ must not be a BEST lock");
-  console.log("PASS: Dangerfield 14+ excluded from BEST with ESPN form");
+  // Over user's $1.20 max — must drop even before form check
+  const overMax = collectBestFormLegs([leg14], game, {
+    requireSportsbet: true,
+    maxLegPrice: 1.2,
+    liveByName: live.byName,
+  });
+  assert.equal(overMax.length, 0, "must respect $1.20 max (leg is $1.30)");
+
+  // Even with a high max, ESPN form must reject 14+ (12 disposal miss)
+  const formFail = collectBestFormLegs([leg14], game, {
+    requireSportsbet: true,
+    maxLegPrice: 1.65,
+    liveByName: live.byName,
+  });
+  assert.equal(formFail.length, 0, "Dangerfield 14+ must fail ESPN last-5");
+
+  // Synthetic perfect form still blocked without liveByName
+  const noLive = collectBestFormLegs([leg14], game, {
+    requireSportsbet: true,
+    maxLegPrice: 1.65,
+  });
+  assert.equal(noLive.length, 0, "no ESPN map → no BEST lock");
+
+  // Control: 12+ should pass on ESPN [30,22,20,17,12] if price ok
+  const leg12 = { ...leg14, id: "d12", threshold: 12, sportsbetPoint: 11.5, sportsbetOdds: 1.15, odds: 1.15 };
+  const ok12 = collectBestFormLegs([leg12], game, {
+    requireSportsbet: true,
+    maxLegPrice: 1.2,
+    liveByName: live.byName,
+  });
+  assert.equal(ok12.length, 1, "12+ clears all last-5 and is ≤$1.20");
+
+  console.log("PASS: max price + ESPN form gates for Dangerfield");
 }
 
 main().catch((err) => {

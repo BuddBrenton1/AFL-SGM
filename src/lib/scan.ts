@@ -21,7 +21,7 @@ import type {
   WeatherSnapshot,
 } from "./types";
 import { generateLegsForGame } from "./engine/legs";
-import { buildBestFormMulti } from "./engine/best-form";
+import { buildBestFormMulti, BEST_MAX_LEG_PRICE } from "./engine/best-form";
 import { predictMatch } from "./engine/predict";
 import { deepScanGame } from "./engine/scanner";
 import { applyLiveFormToPlayers, loadLiveFormForTeams } from "./live-form";
@@ -208,7 +208,6 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   let combinationsChecked = 0;
   let gamesSkippedNoBoard = 0;
   let gamesSkippedSparsePrices = 0;
-  let bestBuilt = 0;
   const scanNotes: string[] = [
     "Live fixtures & ladder via Squiggle API",
     "Kickoff weather via Open-Meteo (venue forecast)",
@@ -316,10 +315,11 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       sportsbetLink: board?.eventLink,
       bookmakerLabel: book.label,
       requireSportsbet: !!board,
+      maxLegPrice: req.maxSingleLegPrice ?? BEST_MAX_LEG_PRICE,
+      liveByName: liveForm.byName,
     });
     if (best) {
       allBest.push(best);
-      bestBuilt += 1;
     }
   }
 
@@ -371,6 +371,20 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     );
   }
 
+  // BEST multis must also respect the user's max per-leg (they are not target-banded)
+  const beforeBest = allBest.length;
+  const bestMultis = allBest.filter((m) =>
+    m.legs.every((leg) => {
+      const p = Number(leg.sportsbetOdds ?? leg.odds);
+      return Number.isFinite(p) && p <= legCap + 0.001;
+    }),
+  );
+  if (beforeBest > 0 && bestMultis.length < beforeBest) {
+    scanNotes.push(
+      `BEST: dropped ${beforeBest - bestMultis.length} multi(s) with a leg over $${legCap.toFixed(2)}`,
+    );
+  }
+
   multis = multis.slice(0, maxResults);
 
   scanNotes.push(
@@ -402,7 +416,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   }
 
   scanNotes.push(
-    `BEST multis: ${bestBuilt}/${selected.length} games had ≥2 player props at 100% last 4–5 games${boardNoteSuffix(book.shortLabel)}`,
+    `BEST multis: ${bestMultis.length}/${selected.length} games kept · ESPN last-5 · each leg ≤ $${legCap.toFixed(2)}${boardNoteSuffix(book.shortLabel)}`,
   );
 
   return {
@@ -422,7 +436,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     candidatesEvaluated,
     combinationsChecked,
     multis,
-    bestMultis: allBest,
+    bestMultis,
     scanNotes,
     sportsbet: {
       ...sportsbetStatus,
