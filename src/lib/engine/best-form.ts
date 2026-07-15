@@ -128,6 +128,9 @@ export function hitEveryRecentGame(
 /**
  * Attach L5 hit counts to every player-prop leg so target SGMs show the same
  * form badge as BEST (including weak lines like 0/5 or 2/5).
+ *
+ * Board legs often name players who aren't in Bounce's small seed roster —
+ * look up ESPN by Sportsbet player name directly so those still get L5.
  */
 export function annotateLegsWithRecentForm(
   legs: CandidateLeg[],
@@ -141,32 +144,40 @@ export function annotateLegsWithRecentForm(
     if (clearLine == null) return leg;
 
     const player = findPlayer(leg, game);
-    if (!player) return leg;
+    // ESPN first — works even when the athlete isn't in the seed roster
+    const live = lookupLiveFormForAnnotation(liveByName, player, leg);
 
-    // Skip seed-only tackle/mark junk when not ESPN-backed
-    if (
-      leg.market === "player_mark" &&
-      !player.marksExplicit &&
-      player.formSource !== "espn"
-    ) {
+    let recent: number[] = [];
+    let source: "ESPN" | "form" = "form";
+
+    if (live) {
+      recent = recentValuesForMarket(live, leg.market);
+      source = "ESPN";
+    } else if (player) {
+      // Seed tackle/mark arrays are often inferred from disposals — don't badge those
+      if (
+        leg.market === "player_mark" &&
+        !player.marksExplicit &&
+        player.formSource !== "espn"
+      ) {
+        return leg;
+      }
+      if (
+        leg.market === "player_tackle" &&
+        !player.tacklesExplicit &&
+        player.formSource !== "espn"
+      ) {
+        return leg;
+      }
+      recent = formValuesForMarket(player, leg.market);
+      source = player.formSource === "espn" ? "ESPN" : "form";
+    } else {
       return leg;
     }
-    if (
-      leg.market === "player_tackle" &&
-      !player.tacklesExplicit &&
-      player.formSource !== "espn"
-    ) {
-      return leg;
-    }
 
-    const live = lookupLiveForm(liveByName, player, leg);
-    const recent = live
-      ? recentValuesForMarket(live, leg.market)
-      : formValuesForMarket(player, leg.market);
     const hit = countRecentFormHits(recent, clearLine, BEST_FORM_GAMES);
     if (hit.games < 1) return leg;
 
-    const source = live || player.formSource === "espn" ? "ESPN" : "form";
     const impact =
       hit.hits === hit.games
         ? ("positive" as const)
@@ -176,8 +187,8 @@ export function annotateLegsWithRecentForm(
 
     return {
       ...leg,
-      playerId: leg.playerId ?? player.id,
-      playerName: leg.playerName ?? player.name,
+      playerId: leg.playerId ?? player?.id,
+      playerName: leg.playerName ?? player?.name ?? live?.name,
       recentFormHits: hit.hits,
       recentFormGames: hit.games,
       factors: [
@@ -226,15 +237,32 @@ function lookupLiveForm(
   player: PlayerProfile,
   leg: CandidateLeg,
 ): LiveFormLine | undefined {
+  return lookupLiveFormForAnnotation(liveByName, player, leg, BEST_FORM_MIN_GAMES);
+}
+
+/** For L5 badges: accept shorter ESPN windows (still better than blank). */
+function lookupLiveFormForAnnotation(
+  liveByName: Map<string, LiveFormLine> | undefined,
+  player: PlayerProfile | undefined,
+  leg: CandidateLeg,
+  minGames: number = 1,
+): LiveFormLine | undefined {
   if (!liveByName?.size) return undefined;
-  const keys = [player.name, leg.playerName].filter(Boolean) as string[];
-  for (const key of keys) {
+
+  const nameKeys = [
+    player?.name,
+    leg.playerName,
+    // "Callum Wilkie 2+ Tackles" → try leading name tokens when playerName missing
+    leg.label?.replace(/\s+\d+\+.*$/, "").trim(),
+  ].filter(Boolean) as string[];
+
+  for (const key of nameKeys) {
     const direct = liveByName.get(normalizePersonName(key));
-    if (direct && direct.games >= BEST_FORM_MIN_GAMES) return direct;
+    if (direct && direct.games >= minGames) return direct;
   }
-  for (const key of keys) {
+  for (const key of nameKeys) {
     const found = [...liveByName.values()].find((l) => namesMatch(l.name, key));
-    if (found && found.games >= BEST_FORM_MIN_GAMES) return found;
+    if (found && found.games >= minGames) return found;
   }
   return undefined;
 }

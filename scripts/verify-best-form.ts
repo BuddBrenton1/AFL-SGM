@@ -94,6 +94,46 @@ async function main() {
     "recent-form factor attached",
   );
 
+  // Board-only athlete (not in seed roster) still gets L5 via ESPN name lookup
+  const boardOnly: CandidateLeg = {
+    id: "wilkie-t2",
+    gameId: 1,
+    market: "player_tackle",
+    label: "Callum Wilkie 2+ Tackles",
+    shortLabel: "Wilkie 2+T",
+    playerName: "Callum Wilkie",
+    threshold: 2,
+    sportsbetPoint: 1.5,
+    sportsbetOdds: 1.25,
+    probability: 0.7,
+    odds: 1.25,
+    confidence: 0.7,
+    valueScore: 0,
+    factors: [],
+    correlationGroup: "player:callum wilkie",
+  };
+  // Inject a fake ESPN line under Wilkie if live fetch didn't include him
+  if (![...live.byName.values()].some((l) => /wilkie/i.test(l.name))) {
+    live.byName.set("callum wilkie", {
+      name: "Callum Wilkie",
+      team: "stkilda",
+      games: 5,
+      last5Goals: [0, 0, 0, 0, 0],
+      last5Disposals: [18, 20, 16, 19, 17],
+      last5Marks: [6, 5, 7, 4, 6],
+      last5Tackles: [3, 2, 1, 4, 2],
+    });
+  }
+  const boardAnnotated = annotateLegsWithRecentForm(
+    [boardOnly],
+    { ...game, awayPlayers: [] } as EnrichedGame,
+    live.byName,
+  );
+  assert.ok(
+    (boardAnnotated[0].recentFormGames ?? 0) >= 1,
+    "board-only player must get L5 from ESPN by name",
+  );
+
   console.log("PASS: max price + ESPN form gates for Dangerfield");
 }
 
