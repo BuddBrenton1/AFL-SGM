@@ -733,9 +733,9 @@ export default function HomePage() {
                 5/5 {book.shortLabel} only
               </span>
               <span className="mt-1 block text-xs text-[var(--muted)]">
-                Every leg must have a live {book.shortLabel} price and cleared
-                the line in all of the last 5 games (L5 5/5). Match winner /
-                totals are excluded — player props only.
+                Every leg must be a live {book.shortLabel} board line and clear
+                the line in all of the last 5 games played (ESPN-verified L5
+                5/5). Bounce model legs and partial form windows are excluded.
               </span>
             </span>
           </label>

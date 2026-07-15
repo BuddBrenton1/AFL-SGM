@@ -3,6 +3,7 @@ import {
   buildBestFormMulti,
   BEST_MAX_LEG_PRICE,
   isPerfectFormSbLeg,
+  isVerifiedSportsbetLeg,
 } from "./engine/best-form";
 import { resolveInsOuts } from "./ins-outs";
 import { playersForTeam } from "./players";
@@ -311,34 +312,38 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
         // Still scan with model legs — Odds API often has no board yet
       } else {
         const minLegsNeeded = Math.min(25, Math.max(2, req.legCount ?? 10));
-        const livePriced = legs.filter((l) => l.sportsbetOdds != null);
+        const boardOnly = boardLegs.filter(isVerifiedSportsbetLeg);
 
-        if (boardLegs.length >= minLegsNeeded) {
-          // Enough live markets to build a full book-only multi
-          legs = boardLegs;
+        if (boardOnly.length >= minLegsNeeded) {
+          legs = boardOnly;
           requireBook = true;
-        } else if (livePriced.length >= minLegsNeeded) {
-          legs = livePriced;
+        } else if (boardOnly.length >= 2) {
+          // Prefer real board lines even when sparse — don't invent SB players
+          legs = boardOnly;
           requireBook = true;
+          gamesSkippedSparsePrices += 1;
         } else {
-          // AFL player props are often missing from Odds API — keep model fill-ins
           gamesSkippedSparsePrices += 1;
           requireBook = false;
         }
       }
     }
 
-    // L5 hit badges on every player prop in the target/BEST pools
+    // L5 hit badges — ESPN full last-5 only
     legs = annotateLegsWithRecentForm(legs, gameLive, liveForm.byName);
 
     if (req.perfectFormOnly) {
-      const locks = legs.filter(isPerfectFormSbLeg);
+      // Strict: raw book board lines only + ESPN re-verified 5/5
+      const locks = annotateLegsWithRecentForm(
+        boardLegs.filter(isVerifiedSportsbetLeg),
+        gameLive,
+        liveForm.byName,
+      ).filter((leg) => isPerfectFormSbLeg(leg, liveForm.byName));
       if (locks.length < 2) {
         gamesSkippedNoPerfectForm += 1;
         scanNotes.push(
-          `5/5 ${book.shortLabel} skipped ${game.homeTeam} vs ${game.awayTeam}: only ${locks.length} lock${locks.length === 1 ? "" : "s"} (need 2+)`,
+          `5/5 ${book.shortLabel} skipped ${game.homeTeam} vs ${game.awayTeam}: only ${locks.length} ESPN-verified lock${locks.length === 1 ? "" : "s"} on the live board (need 2+)`,
         );
-        // Still build BEST below from the full annotated pool
       } else {
         legs = locks;
         requireBook = true;
@@ -346,7 +351,10 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     }
 
     // When 5/5 mode found too few locks, don't invent non-5/5 target multis
-    if (req.perfectFormOnly && !legs.every(isPerfectFormSbLeg)) {
+    if (
+      req.perfectFormOnly &&
+      !legs.every((leg) => isPerfectFormSbLeg(leg, liveForm.byName))
+    ) {
       // skip target scan for this game; BEST still runs
     } else {
       const scanned = deepScanGame({
@@ -369,34 +377,12 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       allMultis.push(...scanned.multis);
     }
 
-    // BEST: live book player-prop lines ONLY — never Bounce model prices.
-    // Falling back to model legs made every 20+ look like ~$1.17 with no SB badge.
-    const sbPricedModel = legs.filter((l) => l.sportsbetOdds != null);
-    const bestPool = (() => {
-      const byKey = new Map<string, (typeof legs)[number]>();
-      // Prefer raw board markets (correct Over X.5 selection + live price)
-      for (const leg of boardLegs) {
-        if (leg.sportsbetOdds == null) continue;
-        if (!leg.playerId && !leg.playerName) continue;
-        const key = [
-          leg.market,
-          leg.playerId ?? leg.playerName,
-          leg.threshold ?? leg.sportsbetPoint ?? "",
-        ].join(":");
-        byKey.set(key, leg);
-      }
-      // Fill gaps with model legs that successfully matched a live book price
-      for (const leg of sbPricedModel) {
-        if (!leg.playerId && !leg.playerName) continue;
-        const key = [
-          leg.market,
-          leg.playerId ?? leg.playerName,
-          leg.threshold ?? leg.sportsbetPoint ?? "",
-        ].join(":");
-        if (!byKey.has(key)) byKey.set(key, leg);
-      }
-      return [...byKey.values()];
-    })();
+    // BEST: live board player-prop lines ONLY (no model→price overlays)
+    const bestPool = annotateLegsWithRecentForm(
+      boardLegs.filter(isVerifiedSportsbetLeg),
+      gameLive,
+      liveForm.byName,
+    );
 
     if (!board) {
       // No book board → skip BEST for this fixture (don't invent model "locks")
@@ -415,12 +401,14 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
         liveByName: liveForm.byName,
       });
       if (best) {
-        // Belt-and-braces: every BEST leg must carry a live book price
-        if (best.legs.every((l) => l.sportsbetOdds != null)) {
+        // Belt-and-braces: every BEST leg must be board-backed + ESPN 5/5
+        if (
+          best.legs.every((l) => isPerfectFormSbLeg(l, liveForm.byName))
+        ) {
           allBest.push(best);
         } else {
           scanNotes.push(
-            `BEST dropped ${game.homeTeam} vs ${game.awayTeam}: a lock lost its ${book.shortLabel} price`,
+            `BEST dropped ${game.homeTeam} vs ${game.awayTeam}: a lock failed ESPN 5/5 or ${book.shortLabel} board verification`,
           );
         }
       }
@@ -456,14 +444,16 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
   if (req.perfectFormOnly) {
     const before = multis.length;
-    multis = multis.filter((m) => m.legs.every(isPerfectFormSbLeg));
+    multis = multis.filter((m) =>
+      m.legs.every((leg) => isPerfectFormSbLeg(leg, liveForm.byName)),
+    );
     if (before > 0 && multis.length === 0) {
       scanNotes.push(
-        `No target SGM had every leg at L5 5/5 with a live ${book.shortLabel} price — try more games, a higher max leg price, or turn off 5/5 ${book.shortLabel} only`,
+        `No target SGM had every leg at ESPN-verified L5 5/5 with a live ${book.shortLabel} board line — try more games, a higher max leg price, or turn off 5/5 ${book.shortLabel} only`,
       );
     } else if (multis.length > 0) {
       scanNotes.push(
-        `5/5 ${book.shortLabel} only: ${multis.length} multi(s) — every leg cleared last-5 and has a live book price`,
+        `5/5 ${book.shortLabel} only: ${multis.length} multi(s) — every leg re-checked against ESPN last-5 played + live board line`,
       );
     }
   }
@@ -489,13 +479,13 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     );
   }
 
-  // BEST multis must also respect the user's max per-leg AND keep live book prices
+  // BEST multis must also respect the user's max per-leg AND keep live book + ESPN 5/5
   const beforeBest = allBest.length;
   const bestMultis = allBest.filter((m) =>
     m.legs.every((leg) => {
       const p = Number(leg.sportsbetOdds);
       return (
-        leg.sportsbetOdds != null &&
+        isPerfectFormSbLeg(leg, liveForm.byName) &&
         Number.isFinite(p) &&
         p <= legCap + 0.001
       );
@@ -503,7 +493,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   );
   if (beforeBest > 0 && bestMultis.length < beforeBest) {
     scanNotes.push(
-      `BEST: dropped ${beforeBest - bestMultis.length} multi(s) missing live ${book.shortLabel} prices or over $${legCap.toFixed(2)}`,
+      `BEST: dropped ${beforeBest - bestMultis.length} multi(s) failing ESPN 5/5, board verification, or over $${legCap.toFixed(2)}`,
     );
   }
 
@@ -519,7 +509,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   }
   if (req.perfectFormOnly) {
     scanNotes.push(
-      `Filter: L5 5/5 + live ${book.shortLabel} only — match winner / totals excluded`,
+      `Filter: ESPN-verified L5 5/5 + live ${book.shortLabel} board lines only — Bounce model legs excluded`,
     );
     if (gamesSkippedNoPerfectForm > 0) {
       scanNotes.push(

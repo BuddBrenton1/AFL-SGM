@@ -169,10 +169,14 @@ export interface CandidateLeg {
   sportsbetPoint?: number;
   /** Human-readable Sportsbet selection, e.g. "Over 3.5" */
   sportsbetSelection?: string;
+  /** True only when the leg was built from a live Odds API / book board line */
+  sportsbetBoardLeg?: boolean;
   /** Last-N form hits at this threshold (player props) */
   recentFormHits?: number;
   /** Games in the recent-form window (usually 5) */
   recentFormGames?: number;
+  /** Raw ESPN values used for the L5 badge (oldest → newest) */
+  recentFormValues?: number[];
   confidence: number;
   valueScore: number;
   factors: FactorSignal[];

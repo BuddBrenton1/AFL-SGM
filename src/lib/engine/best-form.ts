@@ -26,6 +26,50 @@ function normalizePersonName(name: string): string {
     .trim();
 }
 
+/** Explicit nicknames only — never prefix-match (Jack≠Jackson). */
+const FIRST_NAME_ALIASES: Record<string, readonly string[]> = {
+  tom: ["thomas", "tommy"],
+  thomas: ["tom", "tommy"],
+  tommy: ["tom", "thomas"],
+  will: ["william", "bill", "billy"],
+  william: ["will", "bill", "billy"],
+  bill: ["william", "will", "billy"],
+  billy: ["william", "will", "bill"],
+  josh: ["joshua"],
+  joshua: ["josh"],
+  matt: ["matthew"],
+  matthew: ["matt"],
+  mike: ["michael"],
+  michael: ["mike"],
+  chris: ["christopher"],
+  christopher: ["chris"],
+  nick: ["nicholas"],
+  nicholas: ["nick"],
+  alex: ["alexander", "alexandra"],
+  alexander: ["alex"],
+  sam: ["samuel"],
+  samuel: ["sam"],
+  ben: ["benjamin"],
+  benjamin: ["ben"],
+  dan: ["daniel"],
+  daniel: ["dan"],
+  jim: ["james", "jimmy"],
+  james: ["jim", "jimmy"],
+  jimmy: ["james", "jim"],
+};
+
+function firstNamesCompatible(a: string, b: string): boolean {
+  if (a === b) return true;
+  // Single initial only (D Parish ↔ Darcy Parish)
+  if (a.length === 1 || b.length === 1) return a[0] === b[0];
+  const aAliases = new Set([a, ...(FIRST_NAME_ALIASES[a] ?? [])]);
+  const bAliases = new Set([b, ...(FIRST_NAME_ALIASES[b] ?? [])]);
+  for (const x of aAliases) {
+    if (bAliases.has(x)) return true;
+  }
+  return false;
+}
+
 function namesMatch(a: string, b: string): boolean {
   const na = normalizePersonName(a);
   const nb = normalizePersonName(b);
@@ -36,19 +80,8 @@ function namesMatch(a: string, b: string): boolean {
   if (ap.length < 2 || bp.length < 2) return false;
   const aLast = ap[ap.length - 1];
   const bLast = bp[bp.length - 1];
-  const aFirst = ap[0];
-  const bFirst = bp[0];
-  if (aFirst === bFirst && aLast === bLast) return true;
-  // Tom / Thomas / Tommy + same surname
-  if (
-    aLast === bLast &&
-    (aFirst[0] === bFirst[0] ||
-      aFirst.startsWith(bFirst) ||
-      bFirst.startsWith(aFirst))
-  ) {
-    return true;
-  }
-  return false;
+  if (aLast !== bLast) return false;
+  return firstNamesCompatible(ap[0], bp[0]);
 }
 
 function recentValuesForMarket(
@@ -64,24 +97,6 @@ function recentValuesForMarket(
       return line.last5Marks;
     case "player_tackle":
       return line.last5Tackles;
-    default:
-      return [];
-  }
-}
-
-function formValuesForMarket(
-  player: PlayerProfile,
-  market: MarketType,
-): number[] {
-  switch (market) {
-    case "player_goal":
-      return player.form.last5Goals;
-    case "player_disposal":
-      return player.form.last5Disposals;
-    case "player_mark":
-      return player.form.last5Marks;
-    case "player_tackle":
-      return player.form.last5Tackles;
     default:
       return [];
   }
@@ -134,11 +149,8 @@ export function hitEveryRecentGame(
 }
 
 /**
- * Attach L5 hit counts to every player-prop leg so target SGMs show the same
- * form badge as BEST (including weak lines like 0/5 or 2/5).
- *
- * Board legs often name players who aren't in Bounce's small seed roster —
- * look up ESPN by Sportsbet player name directly so those still get L5.
+ * Attach L5 hit counts to every player-prop leg.
+ * ESPN only, full last-5 played window required — never seed / partial fakes.
  */
 export function annotateLegsWithRecentForm(
   legs: CandidateLeg[],
@@ -151,36 +163,38 @@ export function annotateLegsWithRecentForm(
     const clearLine = resolveClearLine(leg);
     if (clearLine == null) return leg;
 
-    const player = findPlayer(leg, game);
-    // ESPN only — never invented seed last5 (those fake 5/5 badges).
-    const live = lookupLiveFormForAnnotation(liveByName, player, leg);
-    if (!live) return leg;
-
-    const recent = recentValuesForMarket(live, leg.market);
-    const hit = countRecentFormHits(recent, clearLine, BEST_FORM_GAMES);
-    if (hit.games < 1) return leg;
+    const verified = verifyEspnForm(leg, liveByName);
+    if (!verified || verified.games < BEST_FORM_MIN_GAMES) return leg;
 
     const impact =
-      hit.hits === hit.games
+      verified.hits === verified.games
         ? ("positive" as const)
-        : hit.rate >= 0.6
+        : verified.rate >= 0.6
           ? ("neutral" as const)
           : ("negative" as const);
+
+    const player = findPlayer(leg, game);
 
     return {
       ...leg,
       playerId: leg.playerId ?? player?.id,
-      playerName: leg.playerName ?? player?.name ?? live.name,
-      recentFormHits: hit.hits,
-      recentFormGames: hit.games,
+      playerName: leg.playerName ?? player?.name ?? verified.name,
+      recentFormHits: verified.hits,
+      recentFormGames: verified.games,
+      recentFormValues: verified.values,
       factors: [
         ...leg.factors.filter((f) => f.key !== "recent-form"),
         {
           key: "recent-form",
           label: "Recent form",
           impact,
-          detail: `L${hit.games} ${hit.hits}/${hit.games} · ${clearLine}+ [${hit.values.join(", ")}] · ESPN`,
-          weight: hit.hits === hit.games ? 0.02 : hit.rate < 0.4 ? -0.02 : 0,
+          detail: `L${verified.games} ${verified.hits}/${verified.games} · ${clearLine}+ [${verified.values.join(", ")}] · ESPN`,
+          weight:
+            verified.hits === verified.games
+              ? 0.02
+              : verified.rate < 0.4
+                ? -0.02
+                : 0,
         },
       ],
     };
@@ -196,14 +210,72 @@ export function isPlayerPropMarket(market: MarketType): boolean {
   );
 }
 
-/** Live book price + cleared the line in every game of a full last-5. */
-export function isPerfectFormSbLeg(leg: CandidateLeg): boolean {
-  if (leg.sportsbetOdds == null) return false;
+/** Real book board line (not a Bounce model leg that merely copied a price). */
+export function isVerifiedSportsbetLeg(leg: CandidateLeg): boolean {
+  if (leg.sportsbetOdds == null || !Number.isFinite(leg.sportsbetOdds)) {
+    return false;
+  }
+  if (leg.sportsbetBoardLeg === true) return true;
+  // Matched model→board overlay must carry market + selection from the line
+  return Boolean(leg.sportsbetMarket && leg.sportsbetSelection);
+}
+
+/**
+ * Re-check ESPN at publish time — never trust a stale recentFormHits field alone.
+ */
+export function verifyEspnForm(
+  leg: CandidateLeg,
+  liveByName?: Map<string, LiveFormLine>,
+): {
+  name: string;
+  games: number;
+  hits: number;
+  values: number[];
+  rate: number;
+  clearLine: number;
+} | null {
+  if (!isPlayerPropMarket(leg.market)) return null;
+  const clearLine = resolveClearLine(leg);
+  if (clearLine == null) return null;
+  const live = lookupLiveFormForAnnotation(liveByName, undefined, leg, BEST_FORM_MIN_GAMES);
+  if (!live || live.games < BEST_FORM_MIN_GAMES) return null;
+  const recent = recentValuesForMarket(live, leg.market);
+  const hit = countRecentFormHits(recent, clearLine, BEST_FORM_GAMES);
+  if (hit.games < BEST_FORM_MIN_GAMES) return null;
+  return {
+    name: live.name,
+    games: hit.games,
+    hits: hit.hits,
+    values: hit.values,
+    rate: hit.rate,
+    clearLine,
+  };
+}
+
+/** Live board price + ESPN-verified full last-5 clears (re-checked). */
+export function isPerfectFormSbLeg(
+  leg: CandidateLeg,
+  liveByName?: Map<string, LiveFormLine>,
+): boolean {
+  if (!isVerifiedSportsbetLeg(leg)) return false;
   if (!isPlayerPropMarket(leg.market)) return false;
+  if (liveByName) {
+    const verified = verifyEspnForm(leg, liveByName);
+    return (
+      verified != null &&
+      verified.games >= BEST_FORM_MIN_GAMES &&
+      verified.hits === verified.games
+    );
+  }
+  // Fallback when map unavailable — still require stored fields to be a clean 5/5
   const games = leg.recentFormGames;
   const hits = leg.recentFormHits;
   if (games == null || hits == null) return false;
-  return games >= BEST_FORM_MIN_GAMES && hits === games;
+  if (games < BEST_FORM_MIN_GAMES || hits !== games) return false;
+  if (!leg.recentFormValues || leg.recentFormValues.length < BEST_FORM_MIN_GAMES) {
+    return false;
+  }
+  return true;
 }
 
 function findPlayer(
@@ -224,15 +296,6 @@ function findPlayer(
   );
 }
 
-function lookupLiveForm(
-  liveByName: Map<string, LiveFormLine> | undefined,
-  player: PlayerProfile,
-  leg: CandidateLeg,
-): LiveFormLine | undefined {
-  return lookupLiveFormForAnnotation(liveByName, player, leg, BEST_FORM_MIN_GAMES);
-}
-
-/** For L5 badges: accept shorter ESPN windows (still better than blank). */
 function lookupLiveFormForAnnotation(
   liveByName: Map<string, LiveFormLine> | undefined,
   player: PlayerProfile | undefined,
@@ -298,48 +361,41 @@ export function collectBestFormLegs(
 
   for (const leg of legs) {
     if (!isPlayerPropMarket(leg.market)) continue;
-    if (requireSb && leg.sportsbetOdds == null) continue;
+    if (requireSb && !isVerifiedSportsbetLeg(leg)) continue;
 
     const price = legPrice(leg);
     if (!(price <= maxPrice + 1e-9)) continue;
 
-    const clearLine = resolveClearLine(leg);
-    if (clearLine == null) continue;
+    // Re-verify ESPN at lock time — never trust a precomputed badge alone
+    const verified = verifyEspnForm(leg, opts?.liveByName);
+    if (!verified || verified.hits !== verified.games) continue;
 
     const player = findPlayer(leg, game);
-    if (!player) continue;
-    if (leg.market === "player_mark" && !player.marksExplicit && player.formSource !== "espn") {
+    if (
+      player &&
+      leg.market === "player_mark" &&
+      !player.marksExplicit &&
+      player.formSource !== "espn"
+    ) {
       continue;
     }
-    if (leg.market === "player_tackle" && !player.tacklesExplicit && player.formSource !== "espn") {
+    if (
+      player &&
+      leg.market === "player_tackle" &&
+      !player.tacklesExplicit &&
+      player.formSource !== "espn"
+    ) {
       continue;
-    }
-
-    // Prefer raw ESPN line by name — don't trust seed even if formSource was missed
-    const live = lookupLiveForm(opts?.liveByName, player, leg);
-    if (!live) continue; // no ESPN row → not a BEST lock
-
-    const recent = recentValuesForMarket(live, leg.market);
-    const hit = hitEveryRecentGame(recent, clearLine, BEST_FORM_GAMES);
-    if (!hit.ok) continue;
-
-    // Double-check against player profile if ESPN-tagged (paranoia)
-    if (player.formSource === "espn") {
-      const profileHit = hitEveryRecentGame(
-        formValuesForMarket(player, leg.market),
-        clearLine,
-        BEST_FORM_GAMES,
-      );
-      if (!profileHit.ok) continue;
     }
 
     const annotated: CandidateLeg = {
       ...leg,
-      playerId: player.id,
-      playerName: player.name,
-      threshold: clearLine,
-      recentFormHits: hit.hits,
-      recentFormGames: hit.games,
+      playerId: leg.playerId ?? player?.id,
+      playerName: leg.playerName ?? player?.name ?? verified.name,
+      threshold: verified.clearLine,
+      recentFormHits: verified.hits,
+      recentFormGames: verified.games,
+      recentFormValues: verified.values,
       factors: [
         ...leg.factors.filter(
           (f) => f.key !== "best-form" && f.key !== "recent-form",
@@ -348,7 +404,7 @@ export function collectBestFormLegs(
           key: "best-form",
           label: "Recent form",
           impact: "positive",
-          detail: `L${hit.games} ${hit.hits}/${hit.games} · ${clearLine}+ every game [${hit.values.join(", ")}] · ESPN · ≤$${maxPrice.toFixed(2)}`,
+          detail: `L${verified.games} ${verified.hits}/${verified.games} · ${verified.clearLine}+ every game [${verified.values.join(", ")}] · ESPN · ≤$${maxPrice.toFixed(2)}`,
           weight: 0.05,
         },
       ],
@@ -359,7 +415,7 @@ export function collectBestFormLegs(
   // One leg per player+market — keep the toughest threshold still at 100%
   const byKey = new Map<string, CandidateLeg>();
   for (const leg of locks) {
-    const key = `${leg.playerId}:${leg.market}`;
+    const key = `${leg.playerId ?? leg.playerName}:${leg.market}`;
     const prev = byKey.get(key);
     if (!prev || (leg.threshold ?? 0) > (prev.threshold ?? 0)) {
       byKey.set(key, leg);
@@ -440,20 +496,10 @@ export function buildBestFormMulti(opts: {
   }
   if (picked.length < 2) return null;
 
-  // Final hard filter — never ship a leg over the user's max or under 100% ESPN form
+  // Final hard filter — never ship a leg over the user's max or under ESPN 5/5
   const clean = picked.filter((leg) => {
     if (legPrice(leg) > maxPrice + 1e-9) return false;
-    const clearLine = resolveClearLine(leg);
-    if (clearLine == null) return false;
-    const player = findPlayer(leg, opts.game);
-    if (!player) return false;
-    const live = lookupLiveForm(opts.liveByName, player, leg);
-    if (!live) return false;
-    return hitEveryRecentGame(
-      recentValuesForMarket(live, leg.market),
-      clearLine,
-      BEST_FORM_GAMES,
-    ).ok;
+    return isPerfectFormSbLeg(leg, opts.liveByName);
   });
   if (clean.length < 2) return null;
 

@@ -75,18 +75,40 @@ function namesMatch(a: string, b: string): boolean {
   if (ap.length < 2 || bp.length < 2) return false;
   const aLast = ap[ap.length - 1];
   const bLast = bp[bp.length - 1];
+  if (aLast !== bLast) return false;
   const aFirst = ap[0];
   const bFirst = bp[0];
-  if (aFirst === bFirst && aLast === bLast) return true;
-  // Tom / Thomas / Tommy + same surname
-  if (
-    aLast === bLast &&
-    (aFirst[0] === bFirst[0] ||
-      aFirst.startsWith(bFirst) ||
-      bFirst.startsWith(aFirst))
-  ) {
-    return true;
-  }
+  if (aFirst === bFirst) return true;
+  if (aFirst.length === 1 || bFirst.length === 1) return aFirst[0] === bFirst[0];
+  // Explicit nickname pairs only (Tom↔Thomas). No prefix matching.
+  const aliases: Record<string, string[]> = {
+    tom: ["thomas", "tommy"],
+    thomas: ["tom", "tommy"],
+    tommy: ["tom", "thomas"],
+    will: ["william"],
+    william: ["will"],
+    josh: ["joshua"],
+    joshua: ["josh"],
+    matt: ["matthew"],
+    matthew: ["matt"],
+    sam: ["samuel"],
+    samuel: ["sam"],
+    ben: ["benjamin"],
+    benjamin: ["ben"],
+    dan: ["daniel"],
+    daniel: ["dan"],
+    nick: ["nicholas"],
+    nicholas: ["nick"],
+    chris: ["christopher"],
+    christopher: ["chris"],
+    alex: ["alexander"],
+    alexander: ["alex"],
+    jim: ["james"],
+    james: ["jim"],
+  };
+  const aSet = new Set([aFirst, ...(aliases[aFirst] ?? [])]);
+  const bSet = new Set([bFirst, ...(aliases[bFirst] ?? [])]);
+  for (const x of aSet) if (bSet.has(x)) return true;
   return false;
 }
 

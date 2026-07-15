@@ -1111,6 +1111,7 @@ export function legsFromSportsbetBoard(
       sportsbetLink: line.link ?? board.eventLink,
       sportsbetPoint: line.point,
       sportsbetSelection: spec.selection,
+      sportsbetBoardLeg: true,
       confidence: confidenceFromFactors(probability, factors),
       valueScore: valueScore(probability, sportsbetOdds),
       factors,
