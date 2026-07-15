@@ -12,6 +12,7 @@ import {
   PAPER_DEFAULT_STAKE,
 } from "@/lib/paper-bankroll";
 import { BOUNCE_BUILD } from "@/lib/build-info";
+import { formatOdds } from "@/lib/engine/odds";
 import { createSavedSgm } from "@/lib/saved-sgm";
 import { formatSgmForBookmaker } from "@/lib/sgm-export";
 import type { ScanResult, SgmMulti } from "@/lib/types";
@@ -46,6 +47,47 @@ interface FixtureCard {
     summary: string;
     factors: { key: string; label: string; impact: string; detail: string }[];
   };
+}
+
+interface MatchH2hPrice {
+  homeTeam: string;
+  awayTeam: string;
+  homeOdds: number;
+  awayOdds: number;
+  eventLink?: string;
+  lastUpdate?: string;
+}
+
+function normalizeTeamKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(
+      /magpies|blues|bombers|dockers|cats|suns|giants|hawks|demons|kangaroos|power|tigers|saints|swans|eagles|bulldogs|lions|crows/g,
+      "",
+    )
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function teamsLooselyEqual(a: string, b: string): boolean {
+  const na = normalizeTeamKey(a);
+  const nb = normalizeTeamKey(b);
+  if (!na || !nb) return false;
+  return na === nb || na.includes(nb) || nb.includes(na);
+}
+
+function findFixtureH2h(
+  prices: MatchH2hPrice[],
+  homeTeam: string,
+  awayTeam: string,
+): MatchH2hPrice | undefined {
+  return prices.find(
+    (p) =>
+      (teamsLooselyEqual(homeTeam, p.homeTeam) &&
+        teamsLooselyEqual(awayTeam, p.awayTeam)) ||
+      (teamsLooselyEqual(homeTeam, p.awayTeam) &&
+        teamsLooselyEqual(awayTeam, p.homeTeam)),
+  );
 }
 
 function formatMatchDate(date: string) {
@@ -88,6 +130,8 @@ export default function HomePage() {
     cached?: boolean;
     cachedAt?: string;
   } | null>(null);
+  const [matchPrices, setMatchPrices] = useState<MatchH2hPrice[]>([]);
+  const [matchPricesLoading, setMatchPricesLoading] = useState(false);
 
   const book = useMemo(() => getBookmaker(bookmaker), [bookmaker]);
   const resultBook = useMemo(
@@ -150,6 +194,30 @@ export default function HomePage() {
         if (!cancelled) setSportsbetStatus(sb);
       } catch {
         /* keep prior status */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookmaker]);
+
+  // Live H2H for fixture tiles — 1 Odds API credit / slate, cached ~12 min
+  useEffect(() => {
+    let cancelled = false;
+    setMatchPricesLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/match-odds?bookmaker=${encodeURIComponent(bookmaker)}`,
+        );
+        const data = await res.json();
+        if (cancelled) return;
+        setMatchPrices(Array.isArray(data.prices) ? data.prices : []);
+        if (data.status) setSportsbetStatus(data.status);
+      } catch {
+        if (!cancelled) setMatchPrices([]);
+      } finally {
+        if (!cancelled) setMatchPricesLoading(false);
       }
     })();
     return () => {
@@ -756,6 +824,11 @@ export default function HomePage() {
             </h2>
             <p className="text-sm text-[var(--muted)]">
               Select games to include. Leave a few on for a wider scan.
+              {matchPricesLoading
+                ? ` · loading ${book.shortLabel} prices…`
+                : matchPrices.length > 0
+                  ? ` · live ${book.shortLabel} H2H on tiles`
+                  : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -806,6 +879,20 @@ export default function HomePage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {roundFixtures.map((g, i) => {
             const on = selectedSet.has(g.id);
+            const h2h = findFixtureH2h(matchPrices, g.homeTeam, g.awayTeam);
+            const homeIsListedHome =
+              h2h &&
+              teamsLooselyEqual(g.homeTeam, h2h.homeTeam);
+            const homePrice = h2h
+              ? homeIsListedHome
+                ? h2h.homeOdds
+                : h2h.awayOdds
+              : null;
+            const awayPrice = h2h
+              ? homeIsListedHome
+                ? h2h.awayOdds
+                : h2h.homeOdds
+              : null;
             return (
               <button
                 key={g.id}
@@ -821,21 +908,44 @@ export default function HomePage() {
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
                       {formatMatchDate(g.date)}
                     </p>
-                    <p
-                      className="mt-1 font-[family-name:var(--font-teko)] text-[1.35rem] leading-none text-[var(--ink)]"
-                      style={{ fontWeight: 600 }}
-                    >
-                      {g.homeTeam}
-                    </p>
-                    <p
-                      className="font-[family-name:var(--font-teko)] text-[1.35rem] leading-none text-[var(--ink)]"
-                      style={{ fontWeight: 600 }}
-                    >
-                      <span className="mr-1 text-[var(--muted)]">vs</span>
-                      {g.awayTeam}
-                    </p>
+                    <div className="mt-1 flex items-baseline justify-between gap-2">
+                      <p
+                        className="min-w-0 truncate font-[family-name:var(--font-teko)] text-[1.35rem] leading-none text-[var(--ink)]"
+                        style={{ fontWeight: 600 }}
+                      >
+                        {g.homeTeam}
+                      </p>
+                      {homePrice != null && (
+                        <span className="shrink-0 font-[family-name:var(--font-teko)] text-xl leading-none text-[var(--leather)]"
+                          style={{ fontWeight: 600 }}
+                        >
+                          {formatOdds(homePrice)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p
+                        className="min-w-0 truncate font-[family-name:var(--font-teko)] text-[1.35rem] leading-none text-[var(--ink)]"
+                        style={{ fontWeight: 600 }}
+                      >
+                        <span className="mr-1 text-[var(--muted)]">vs</span>
+                        {g.awayTeam}
+                      </p>
+                      {awayPrice != null && (
+                        <span className="shrink-0 font-[family-name:var(--font-teko)] text-xl leading-none text-[var(--leather)]"
+                          style={{ fontWeight: 600 }}
+                        >
+                          {formatOdds(awayPrice)}
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-1.5 truncate text-xs text-[var(--muted)]">
                       {g.venue} · #{g.homeRank}/#{g.awayRank}
+                      {h2h
+                        ? ` · ${book.shortLabel}`
+                        : matchPricesLoading
+                          ? ` · ${book.shortLabel}…`
+                          : ""}
                     </p>
                   </div>
                   <span

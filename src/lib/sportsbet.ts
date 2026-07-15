@@ -27,6 +27,16 @@ export interface SportsbetStatus {
   cachedAt?: string;
 }
 
+/** Live head-to-head prices for fixture tiles (cheap: 1 Odds API credit for the slate). */
+export interface MatchH2hPrice {
+  homeTeam: string;
+  awayTeam: string;
+  homeOdds: number;
+  awayOdds: number;
+  eventLink?: string;
+  lastUpdate?: string;
+}
+
 export interface SportsbetPriceLine {
   marketKey: string;
   name: string;
@@ -340,6 +350,169 @@ export async function probeSportsbetStatus(
       lastError: err instanceof Error ? err.message : "Probe failed",
     };
   }
+}
+
+type H2hSnapshot = {
+  fetchedAt: string;
+  prices: MatchH2hPrice[];
+  status: SportsbetStatus;
+};
+
+let h2hMemory: { key: string; expiresAt: number; snap: H2hSnapshot } | null =
+  null;
+
+function extractH2hPrice(event: SportsbetEventOdds): MatchH2hPrice | null {
+  const h2h = event.lines.filter((l) => l.marketKey === "h2h");
+  if (h2h.length < 2) return null;
+  const home = h2h.find((l) => teamNamesMatch(l.name, event.homeTeam));
+  const away = h2h.find((l) => teamNamesMatch(l.name, event.awayTeam));
+  if (!home || !away) return null;
+  if (!Number.isFinite(home.price) || !Number.isFinite(away.price)) return null;
+  return {
+    homeTeam: event.homeTeam,
+    awayTeam: event.awayTeam,
+    homeOdds: roundOdds(home.price),
+    awayOdds: roundOdds(away.price),
+    eventLink: home.link ?? away.link ?? event.eventLink,
+    lastUpdate: event.lastUpdate,
+  };
+}
+
+async function fetchH2hPricesUncached(
+  bookmakerId: BookmakerId,
+): Promise<H2hSnapshot> {
+  const book = getBookmaker(bookmakerId);
+  const fetchedAt = new Date().toISOString();
+  try {
+    // 1 market × 1 region = 1 credit for the entire AFL slate
+    const { data, remaining } = await oddsFetch(
+      `/sports/${SPORT}/odds?regions=au&bookmakers=${book.apiKey}&markets=h2h&oddsFormat=decimal&includeLinks=true`,
+      { revalidate: SHARED_BOARD_REVALIDATE_SEC },
+    );
+    const events = (data as OddsApiEvent[])
+      .map((e) => extractSportsbet(e, book.apiKey))
+      .filter((e): e is SportsbetEventOdds => e !== null);
+    const prices = events
+      .map(extractH2hPrice)
+      .filter((p): p is MatchH2hPrice => p !== null);
+
+    return {
+      fetchedAt,
+      prices,
+      status: {
+        configured: true,
+        connected: prices.length > 0,
+        bookmakerId: book.id,
+        bookmakerLabel: book.label,
+        bookmakerShort: book.shortLabel,
+        remainingRequests: remaining,
+        message:
+          prices.length > 0
+            ? `${book.label} H2H prices for ${prices.length} fixture${prices.length === 1 ? "" : "s"}.`
+            : `Connected, but no ${book.label} H2H markets on Odds API yet.`,
+      },
+    };
+  } catch (err) {
+    const quotaExhausted = Boolean(
+      (err as Error & { quotaExhausted?: boolean })?.quotaExhausted,
+    );
+    return {
+      fetchedAt,
+      prices: [],
+      status: {
+        configured: true,
+        connected: false,
+        bookmakerId: book.id,
+        bookmakerLabel: book.label,
+        bookmakerShort: book.shortLabel,
+        quotaExhausted,
+        message: quotaExhausted
+          ? `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`
+          : `${book.label} H2H fetch failed.`,
+        lastError: err instanceof Error ? err.message : "Unknown error",
+      },
+    };
+  }
+}
+
+/**
+ * Live match-winner prices for fixture tiles.
+ * One Odds API credit for the whole AFL slate (h2h only), shared 12-min cache.
+ */
+export async function loadBookmakerH2hPrices(
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
+): Promise<{ prices: MatchH2hPrice[]; status: SportsbetStatus }> {
+  const book = getBookmaker(bookmakerId);
+  const base = getSportsbetConfigStatus(book.id);
+  if (!base.configured) {
+    return { prices: [], status: base };
+  }
+
+  const cacheKey = `h2h|${book.id}`;
+  if (h2hMemory && h2hMemory.key === cacheKey && h2hMemory.expiresAt > Date.now()) {
+    return {
+      prices: h2hMemory.snap.prices,
+      status: {
+        ...h2hMemory.snap.status,
+        cached: true,
+        cachedAt: h2hMemory.snap.fetchedAt,
+        message: `${h2hMemory.snap.status.message.replace(/ \(shared cache.*\)$/, "")} (memory cache)`,
+      },
+    };
+  }
+
+  const { unstable_cache } = await import("next/cache");
+  const readShared = unstable_cache(
+    async () => fetchH2hPricesUncached(book.id),
+    ["sportsbet-h2h-v1", book.id],
+    { revalidate: SHARED_BOARD_REVALIDATE_SEC, tags: ["sportsbet-h2h"] },
+  );
+  const snap = await readShared();
+  const fromCache =
+    Date.now() - Date.parse(snap.fetchedAt) > 2_000 &&
+    !snap.status.quotaExhausted &&
+    !snap.status.lastError &&
+    snap.prices.length > 0;
+
+  const ageSec = Math.max(
+    0,
+    Math.round((Date.now() - Date.parse(snap.fetchedAt)) / 1000),
+  );
+  const ageLabel =
+    ageSec < 60 ? `${ageSec}s ago` : `${Math.round(ageSec / 60)}m ago`;
+
+  const status: SportsbetStatus = {
+    ...snap.status,
+    cached: fromCache,
+    cachedAt: snap.fetchedAt,
+    message: fromCache
+      ? `${snap.status.message.replace(/ \(shared cache.*\)$/, "")} (shared cache · ${ageLabel})`
+      : snap.status.message,
+  };
+
+  if (!snap.status.quotaExhausted && !snap.status.lastError) {
+    h2hMemory = {
+      key: cacheKey,
+      expiresAt: Date.now() + BOARD_CACHE_TTL_MS,
+      snap: { ...snap, status },
+    };
+  }
+
+  return { prices: snap.prices, status };
+}
+
+/** Match a Squiggle fixture to a cached H2H price row. */
+export function findH2hPriceForMatchup(
+  prices: MatchH2hPrice[],
+  homeTeam: string,
+  awayTeam: string,
+): MatchH2hPrice | undefined {
+  return prices.find(
+    (p) =>
+      teamNamesCompatible(homeTeam, awayTeam, p.homeTeam, p.awayTeam) ||
+      (teamNamesMatch(homeTeam, p.homeTeam) &&
+        teamNamesMatch(awayTeam, p.awayTeam)),
+  );
 }
 
 function extractSportsbet(
