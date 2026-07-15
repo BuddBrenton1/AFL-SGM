@@ -230,6 +230,11 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     scanNotes.push(
       `${book.label} leg prices via The Odds API — SGM total is a product estimate (book may price correlation differently)`,
     );
+    if (sportsbetStatus.cached) {
+      scanNotes.push(
+        "Sportsbet board served from shared 12-min cache — same prices, no Odds API credit spend this scan",
+      );
+    }
   } else if (sportsbetStatus.configured) {
     scanNotes.push(sportsbetStatus.message);
     if (sportsbetStatus.lastError) scanNotes.push(sportsbetStatus.lastError);

@@ -85,6 +85,8 @@ export default function HomePage() {
     remainingRequests?: number | null;
     lastError?: string;
     quotaExhausted?: boolean;
+    cached?: boolean;
+    cachedAt?: string;
   } | null>(null);
 
   const book = useMemo(() => getBookmaker(bookmaker), [bookmaker]);
@@ -477,8 +479,17 @@ export default function HomePage() {
             {sportsbetStatus?.remainingRequests != null && (
               <p className="mt-1 text-xs opacity-80">
                 Odds API credits remaining: {sportsbetStatus.remainingRequests}
+                {sportsbetStatus.cached
+                  ? " · board from shared cache (no credit spend)"
+                  : ""}
               </p>
             )}
+            {sportsbetStatus?.cached &&
+              sportsbetStatus.remainingRequests == null && (
+                <p className="mt-1 text-xs opacity-80">
+                  Board from shared cache (no Odds API credit spend)
+                </p>
+              )}
           </div>
 
           <div className="mt-6 grid gap-6 md:grid-cols-2">

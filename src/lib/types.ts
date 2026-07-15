@@ -256,5 +256,7 @@ export interface ScanResult {
     remainingRequests?: number | null;
     lastError?: string;
     quotaExhausted?: boolean;
+    cached?: boolean;
+    cachedAt?: string;
   };
 }

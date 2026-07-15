@@ -21,6 +21,10 @@ export interface SportsbetStatus {
   lastError?: string;
   /** True when Odds API returned OUT_OF_USAGE_CREDITS */
   quotaExhausted?: boolean;
+  /** Served from shared/server cache (same prices, no new Odds API spend) */
+  cached?: boolean;
+  /** When the cached board was fetched (ISO) */
+  cachedAt?: string;
 }
 
 export interface SportsbetPriceLine {
@@ -386,12 +390,25 @@ const EVENT_MARKETS = [
 ].join(",");
 
 const MAX_BOARD_EVENTS = 5;
-const BOARD_CACHE_TTL_MS = 8 * 60 * 1000;
+/** In-process L1 (same warm instance). */
+const BOARD_CACHE_TTL_MS = 12 * 60 * 1000;
+/**
+ * Shared L2 via Next.js Data Cache (survives cold starts on Vercel).
+ * Same boards/prices — only avoids re-spending Odds API credits.
+ */
+const SHARED_BOARD_REVALIDATE_SEC = 12 * 60;
 
 type BoardCache = {
   key: string;
   expiresAt: number;
   byMatchup: Map<string, SportsbetEventOdds>;
+  status: SportsbetStatus;
+};
+
+/** JSON-serializable board for Next.js shared Data Cache. */
+type BoardSnapshot = {
+  fetchedAt: string;
+  entries: [string, SportsbetEventOdds][];
   status: SportsbetStatus;
 };
 
@@ -429,6 +446,46 @@ function storeBoardAliases(
   for (const key of keys) byMatchup.set(key, board);
 }
 
+function snapshotToResult(
+  snap: BoardSnapshot,
+  fromCache: boolean,
+): {
+  byMatchup: Map<string, SportsbetEventOdds>;
+  status: SportsbetStatus;
+} {
+  const byMatchup = new Map<string, SportsbetEventOdds>(snap.entries);
+  const ageSec = Math.max(
+    0,
+    Math.round((Date.now() - Date.parse(snap.fetchedAt)) / 1000),
+  );
+  const ageLabel =
+    ageSec < 60 ? `${ageSec}s ago` : `${Math.round(ageSec / 60)}m ago`;
+  return {
+    byMatchup,
+    status: {
+      ...snap.status,
+      cached: fromCache,
+      cachedAt: snap.fetchedAt,
+      message: fromCache
+        ? `${snap.status.message.replace(/ \(cached.*\)$/, "")} (shared cache · ${ageLabel})`
+        : snap.status.message,
+    },
+  };
+}
+
+function rememberBoard(
+  cacheKey: string,
+  byMatchup: Map<string, SportsbetEventOdds>,
+  status: SportsbetStatus,
+) {
+  boardCache = {
+    key: cacheKey,
+    expiresAt: Date.now() + BOARD_CACHE_TTL_MS,
+    byMatchup,
+    status,
+  };
+}
+
 export async function fetchSportsbetEventOdds(
   eventId: string,
   bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
@@ -436,6 +493,7 @@ export async function fetchSportsbetEventOdds(
   const book = getBookmaker(bookmakerId);
   const { data, remaining } = await oddsFetch(
     `/sports/${SPORT}/events/${eventId}/odds?regions=au&bookmakers=${book.apiKey}&markets=${EVENT_MARKETS}&oddsFormat=decimal&includeLinks=true`,
+    { revalidate: SHARED_BOARD_REVALIDATE_SEC },
   );
   return {
     board: extractSportsbet(data as OddsApiEvent, book.apiKey),
@@ -443,61 +501,34 @@ export async function fetchSportsbetEventOdds(
   };
 }
 
-export async function loadSportsbetBoard(
-  matchups: {
-    homeTeam: string;
-    awayTeam: string;
-  }[],
-  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
-): Promise<{
-  byMatchup: Map<string, SportsbetEventOdds>;
-  status: SportsbetStatus;
-}> {
+/** Paid Odds API board build — no caching layer. */
+async function fetchSportsbetBoardUncached(
+  matchups: { homeTeam: string; awayTeam: string }[],
+  bookmakerId: BookmakerId,
+): Promise<BoardSnapshot> {
   const book = getBookmaker(bookmakerId);
   const byMatchup = new Map<string, SportsbetEventOdds>();
-  const baseStatus = getSportsbetConfigStatus(book.id);
-  if (!baseStatus.configured) {
-    return { byMatchup, status: baseStatus };
-  }
-
-  if (matchups.length === 0) {
-    // Don't burn credits for an empty slate — probe is free.
-    const probed = await probeSportsbetStatus(book.id);
-    return { byMatchup, status: probed };
-  }
-
-  const cacheKey = matchupsCacheKey(matchups, book.id);
-  if (
-    boardCache &&
-    boardCache.key === cacheKey &&
-    boardCache.expiresAt > Date.now()
-  ) {
-    return {
-      byMatchup: boardCache.byMatchup,
-      status: {
-        ...boardCache.status,
-        message: `${boardCache.status.message} (cached)`,
-      },
-    };
-  }
+  const fetchedAt = new Date().toISOString();
 
   try {
-    // Free event list → match Squiggle names → one paid call per fixture
     const { events, remaining: listRemaining } = await fetchAflEventList();
     if (listRemaining != null && listRemaining <= 0) {
-      const status: SportsbetStatus = {
-        configured: true,
-        connected: false,
-        bookmakerId: book.id,
-        bookmakerLabel: book.label,
-        bookmakerShort: book.shortLabel,
-        remainingRequests: listRemaining,
-        quotaExhausted: true,
-        message: `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`,
-        lastError:
-          "Replace or top up ODDS_API_KEY at the-odds-api.com, then redeploy.",
+      return {
+        fetchedAt,
+        entries: [],
+        status: {
+          configured: true,
+          connected: false,
+          bookmakerId: book.id,
+          bookmakerLabel: book.label,
+          bookmakerShort: book.shortLabel,
+          remainingRequests: listRemaining,
+          quotaExhausted: true,
+          message: `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`,
+          lastError:
+            "Replace or top up ODDS_API_KEY at the-odds-api.com, then redeploy.",
+        },
       };
-      return { byMatchup, status };
     }
 
     const pairs: {
@@ -546,40 +577,35 @@ export async function loadSportsbetBoard(
           if ((err as Error & { quotaExhausted?: boolean })?.quotaExhausted) {
             throw err;
           }
-          // Skip this fixture; others may still load
         }
       }),
     );
 
-    const status: SportsbetStatus = {
-      configured: true,
-      connected: loaded > 0,
-      bookmakerId: book.id,
-      bookmakerLabel: book.label,
-      bookmakerShort: book.shortLabel,
-      remainingRequests: remaining,
-      message:
-        loaded > 0
-          ? `${book.label} prices linked for ${loaded} fixture${loaded === 1 ? "" : "s"} (${propLines} player lines).`
-          : pairs.length === 0
-            ? `Connected, but no Odds API events matched this Squiggle slate yet.`
-            : `Matched ${pairs.length} fixture${pairs.length === 1 ? "" : "s"} but ${book.label} returned no markets.`,
+    return {
+      fetchedAt,
+      entries: [...byMatchup.entries()],
+      status: {
+        configured: true,
+        connected: loaded > 0,
+        bookmakerId: book.id,
+        bookmakerLabel: book.label,
+        bookmakerShort: book.shortLabel,
+        remainingRequests: remaining,
+        message:
+          loaded > 0
+            ? `${book.label} prices linked for ${loaded} fixture${loaded === 1 ? "" : "s"} (${propLines} player lines).`
+            : pairs.length === 0
+              ? `Connected, but no Odds API events matched this Squiggle slate yet.`
+              : `Matched ${pairs.length} fixture${pairs.length === 1 ? "" : "s"} but ${book.label} returned no markets.`,
+      },
     };
-
-    boardCache = {
-      key: cacheKey,
-      expiresAt: Date.now() + BOARD_CACHE_TTL_MS,
-      byMatchup,
-      status,
-    };
-
-    return { byMatchup, status };
   } catch (err) {
     const quotaExhausted = Boolean(
       (err as Error & { quotaExhausted?: boolean })?.quotaExhausted,
     );
     return {
-      byMatchup,
+      fetchedAt,
+      entries: [...byMatchup.entries()],
       status: {
         configured: true,
         connected: false,
@@ -594,6 +620,125 @@ export async function loadSportsbetBoard(
       },
     };
   }
+}
+
+/**
+ * Load Sportsbet boards with L1 (memory) + L2 (Next.js shared Data Cache).
+ * Cached hits return the same lines/prices — they just skip Odds API spend.
+ */
+export async function loadSportsbetBoard(
+  matchups: {
+    homeTeam: string;
+    awayTeam: string;
+  }[],
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
+): Promise<{
+  byMatchup: Map<string, SportsbetEventOdds>;
+  status: SportsbetStatus;
+}> {
+  const book = getBookmaker(bookmakerId);
+  const baseStatus = getSportsbetConfigStatus(book.id);
+  if (!baseStatus.configured) {
+    return { byMatchup: new Map(), status: baseStatus };
+  }
+
+  if (matchups.length === 0) {
+    const probed = await probeSportsbetStatus(book.id);
+    return { byMatchup: new Map(), status: probed };
+  }
+
+  const cacheKey = matchupsCacheKey(matchups, book.id);
+
+  // L1 — same warm instance
+  if (
+    boardCache &&
+    boardCache.key === cacheKey &&
+    boardCache.expiresAt > Date.now()
+  ) {
+    return {
+      byMatchup: boardCache.byMatchup,
+      status: {
+        ...boardCache.status,
+        cached: true,
+        cachedAt: boardCache.status.cachedAt,
+        message: boardCache.status.message.includes("(shared cache")
+          ? boardCache.status.message
+          : `${boardCache.status.message.replace(/ \(cached.*\)$/, "")} (memory cache)`,
+      },
+    };
+  }
+
+  // Free quota probe — avoid caching / paying when already exhausted
+  try {
+    const { remaining } = await fetchAflEventList();
+    if (remaining != null && remaining <= 0) {
+      return {
+        byMatchup: new Map(),
+        status: {
+          configured: true,
+          connected: false,
+          bookmakerId: book.id,
+          bookmakerLabel: book.label,
+          bookmakerShort: book.shortLabel,
+          remainingRequests: remaining,
+          quotaExhausted: true,
+          message: `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`,
+          lastError:
+            "Replace or top up ODDS_API_KEY at the-odds-api.com, then redeploy.",
+        },
+      };
+    }
+  } catch (err) {
+    const quotaExhausted = Boolean(
+      (err as Error & { quotaExhausted?: boolean })?.quotaExhausted,
+    );
+    if (quotaExhausted) {
+      return {
+        byMatchup: new Map(),
+        status: {
+          configured: true,
+          connected: false,
+          bookmakerId: book.id,
+          bookmakerLabel: book.label,
+          bookmakerShort: book.shortLabel,
+          quotaExhausted: true,
+          message: `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`,
+          lastError: err instanceof Error ? err.message : "Quota check failed",
+        },
+      };
+    }
+  }
+
+  // L2 — shared across Vercel instances (Next.js Data Cache)
+  const { unstable_cache } = await import("next/cache");
+  const matchupsCopy = matchups.map((m) => ({
+    homeTeam: m.homeTeam,
+    awayTeam: m.awayTeam,
+  }));
+
+  const readShared = unstable_cache(
+    async () => fetchSportsbetBoardUncached(matchupsCopy, book.id),
+    ["sportsbet-board-v1", cacheKey],
+    { revalidate: SHARED_BOARD_REVALIDATE_SEC, tags: ["sportsbet-board"] },
+  );
+
+  const snap = await readShared();
+  const fromCache =
+    Date.now() - Date.parse(snap.fetchedAt) > 2_000 &&
+    !snap.status.quotaExhausted &&
+    !snap.status.lastError;
+
+  // Never treat quota/error snapshots as warm shared hits worth L1 sticky cache
+  const result = snapshotToResult(snap, fromCache && snap.entries.length > 0);
+  if (
+    !snap.status.quotaExhausted &&
+    !snap.status.lastError &&
+    (snap.entries.length > 0 || snap.status.connected)
+  ) {
+    rememberBoard(cacheKey, result.byMatchup, result.status);
+  }
+
+  return result;
 }
 
 function findSportsbetLine(
