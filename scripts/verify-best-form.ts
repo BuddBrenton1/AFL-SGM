@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  annotateLegsWithRecentForm,
   collectBestFormLegs,
+  countRecentFormHits,
   hitEveryRecentGame,
 } from "../src/lib/engine/best-form";
 import {
@@ -12,6 +14,9 @@ import type { CandidateLeg, EnrichedGame } from "../src/lib/types";
 
 assert.equal(hitEveryRecentGame([30, 22, 20, 17, 12], 14, 5).ok, false);
 assert.equal(hitEveryRecentGame([30, 22, 20, 17, 12], 14, 5).hits, 4);
+assert.equal(countRecentFormHits([30, 22, 20, 17, 12], 14, 5).hits, 4);
+assert.equal(countRecentFormHits([30, 22, 20, 17, 12], 14, 5).games, 5);
+assert.equal(countRecentFormHits([10, 8, 9, 7, 6], 14, 5).hits, 0);
 
 async function main() {
   const live = await loadLiveFormForTeams(["geelong"], 5);
@@ -79,6 +84,15 @@ async function main() {
     liveByName: live.byName,
   });
   assert.equal(ok12.length, 1, "12+ clears all last-5 and is ≤$1.20");
+
+  // Target SGMs: annotate even failing lines so UI can show L5 4/5 etc.
+  const annotated = annotateLegsWithRecentForm([leg14], game, live.byName);
+  assert.equal(annotated[0].recentFormGames, 5);
+  assert.equal(annotated[0].recentFormHits, 4);
+  assert.ok(
+    annotated[0].factors.some((f) => f.key === "recent-form"),
+    "recent-form factor attached",
+  );
 
   console.log("PASS: max price + ESPN form gates for Dangerfield");
 }

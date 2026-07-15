@@ -169,6 +169,10 @@ export interface CandidateLeg {
   sportsbetPoint?: number;
   /** Human-readable Sportsbet selection, e.g. "Over 3.5" */
   sportsbetSelection?: string;
+  /** Last-N form hits at this threshold (player props) */
+  recentFormHits?: number;
+  /** Games in the recent-form window (usually 5) */
+  recentFormGames?: number;
   confidence: number;
   valueScore: number;
   factors: FactorSignal[];

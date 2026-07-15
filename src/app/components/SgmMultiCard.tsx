@@ -137,13 +137,33 @@ export function SgmMultiCard(props: {
                   {leg.sportsbetSelection ? ` · ${leg.sportsbetSelection}` : ""}
                 </span>
               )}
-              {leg.factors.some((f) => f.key === "best-form") && (
-                <span className="ml-2 border border-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--orange)]">
-                  {leg.factors
-                    .find((f) => f.key === "best-form")
-                    ?.detail.match(/^L\d+\s+\d+\/\d+/)?.[0] ?? "L5 lock"}
+              {leg.recentFormGames != null && leg.recentFormGames > 0 && (
+                <span
+                  className={`ml-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                    leg.recentFormHits === leg.recentFormGames
+                      ? "border border-[var(--orange)] text-[var(--orange)]"
+                      : (leg.recentFormHits ?? 0) / leg.recentFormGames >= 0.6
+                        ? "border border-[var(--line)] text-[var(--muted-strong)]"
+                        : "border border-[var(--line)] text-[var(--muted)]"
+                  }`}
+                  title={
+                    leg.factors.find(
+                      (f) => f.key === "recent-form" || f.key === "best-form",
+                    )?.detail
+                  }
+                >
+                  L{leg.recentFormGames} {leg.recentFormHits}/
+                  {leg.recentFormGames}
                 </span>
               )}
+              {leg.recentFormGames == null &&
+                leg.factors.some((f) => f.key === "best-form") && (
+                  <span className="ml-2 border border-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--orange)]">
+                    {leg.factors
+                      .find((f) => f.key === "best-form")
+                      ?.detail.match(/^L\d+\s+\d+\/\d+/)?.[0] ?? "L5 lock"}
+                  </span>
+                )}
             </span>
             <span className="flex items-center gap-2 text-[var(--muted)]">
               {leg.sportsbetOdds != null ? (

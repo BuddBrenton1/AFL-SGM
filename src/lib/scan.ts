@@ -1,3 +1,4 @@
+import { annotateLegsWithRecentForm } from "./engine/best-form";
 import { resolveInsOuts } from "./ins-outs";
 import { playersForTeam } from "./players";
 import { fetchStandings, fetchUpcomingGames } from "./squiggle";
@@ -263,9 +264,14 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
     // Always merge raw board lines so Over X.5 props show SB prices even when
     // Bounce model thresholds don't line up with the book.
-    const boardLegs = board
+    const boardLegsRaw = board
       ? legsFromSportsbetBoard(board, gameLive, bookmaker)
       : [];
+    const boardLegs = annotateLegsWithRecentForm(
+      boardLegsRaw,
+      gameLive,
+      liveForm.byName,
+    );
     if (boardLegs.length > 0) {
       const seen = new Set(
         legs.map((l) =>
@@ -311,6 +317,9 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
         }
       }
     }
+
+    // L5 hit badges on every player prop in the target/BEST pools
+    legs = annotateLegsWithRecentForm(legs, gameLive, liveForm.byName);
 
     const scanned = deepScanGame({
       gameId: gameLive.id,

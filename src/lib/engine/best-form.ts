@@ -79,6 +79,22 @@ function formValuesForMarket(
   }
 }
 
+/** Count how many of the last N games cleared the threshold (for UI / soft signals). */
+export function countRecentFormHits(
+  values: number[],
+  threshold: number,
+  n: number = BEST_FORM_GAMES,
+): { games: number; hits: number; values: number[]; rate: number } {
+  const window = values.slice(-n).filter((v) => Number.isFinite(Number(v)));
+  const hits = window.filter((v) => Number(v) >= threshold).length;
+  return {
+    games: window.length,
+    hits,
+    values: window,
+    rate: window.length ? hits / window.length : 0,
+  };
+}
+
 /** True if the player cleared the threshold in every one of the last N games. */
 export function hitEveryRecentGame(
   values: number[],
@@ -107,6 +123,75 @@ export function hitEveryRecentGame(
     values: window,
     rate,
   };
+}
+
+/**
+ * Attach L5 hit counts to every player-prop leg so target SGMs show the same
+ * form badge as BEST (including weak lines like 0/5 or 2/5).
+ */
+export function annotateLegsWithRecentForm(
+  legs: CandidateLeg[],
+  game: EnrichedGame,
+  liveByName?: Map<string, LiveFormLine>,
+): CandidateLeg[] {
+  return legs.map((leg) => {
+    if (!isPlayerPropMarket(leg.market)) return leg;
+
+    const clearLine = resolveClearLine(leg);
+    if (clearLine == null) return leg;
+
+    const player = findPlayer(leg, game);
+    if (!player) return leg;
+
+    // Skip seed-only tackle/mark junk when not ESPN-backed
+    if (
+      leg.market === "player_mark" &&
+      !player.marksExplicit &&
+      player.formSource !== "espn"
+    ) {
+      return leg;
+    }
+    if (
+      leg.market === "player_tackle" &&
+      !player.tacklesExplicit &&
+      player.formSource !== "espn"
+    ) {
+      return leg;
+    }
+
+    const live = lookupLiveForm(liveByName, player, leg);
+    const recent = live
+      ? recentValuesForMarket(live, leg.market)
+      : formValuesForMarket(player, leg.market);
+    const hit = countRecentFormHits(recent, clearLine, BEST_FORM_GAMES);
+    if (hit.games < 1) return leg;
+
+    const source = live || player.formSource === "espn" ? "ESPN" : "form";
+    const impact =
+      hit.hits === hit.games
+        ? ("positive" as const)
+        : hit.rate >= 0.6
+          ? ("neutral" as const)
+          : ("negative" as const);
+
+    return {
+      ...leg,
+      playerId: leg.playerId ?? player.id,
+      playerName: leg.playerName ?? player.name,
+      recentFormHits: hit.hits,
+      recentFormGames: hit.games,
+      factors: [
+        ...leg.factors.filter((f) => f.key !== "recent-form"),
+        {
+          key: "recent-form",
+          label: "Recent form",
+          impact,
+          detail: `L${hit.games} ${hit.hits}/${hit.games} · ${clearLine}+ [${hit.values.join(", ")}] · ${source}`,
+          weight: hit.hits === hit.games ? 0.02 : hit.rate < 0.4 ? -0.02 : 0,
+        },
+      ],
+    };
+  });
 }
 
 export function isPlayerPropMarket(market: MarketType): boolean {
@@ -233,8 +318,12 @@ export function collectBestFormLegs(
       playerId: player.id,
       playerName: player.name,
       threshold: clearLine,
+      recentFormHits: hit.hits,
+      recentFormGames: hit.games,
       factors: [
-        ...leg.factors.filter((f) => f.key !== "best-form"),
+        ...leg.factors.filter(
+          (f) => f.key !== "best-form" && f.key !== "recent-form",
+        ),
         {
           key: "best-form",
           label: "Recent form",

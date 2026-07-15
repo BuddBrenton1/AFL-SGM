@@ -424,6 +424,19 @@ export function SavedSgmsSection() {
                               {i + 1}.
                             </span>
                             {leg.label}
+                            {leg.recentFormGames != null &&
+                              leg.recentFormGames > 0 && (
+                                <span
+                                  className={`ml-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                    leg.recentFormHits === leg.recentFormGames
+                                      ? "border border-[var(--orange)] text-[var(--orange)]"
+                                      : "border border-[var(--line)] text-[var(--muted)]"
+                                  }`}
+                                >
+                                  L{leg.recentFormGames} {leg.recentFormHits}/
+                                  {leg.recentFormGames}
+                                </span>
+                              )}
                             {result.outcome === "won" && (
                               <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111]">
                                 Hit

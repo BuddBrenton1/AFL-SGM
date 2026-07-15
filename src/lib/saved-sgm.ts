@@ -20,6 +20,8 @@ export interface SavedLegSnapshot {
   odds: number;
   sportsbetOdds?: number;
   confidence: number;
+  recentFormHits?: number;
+  recentFormGames?: number;
 }
 
 export interface SavedLegResult {
@@ -111,6 +113,8 @@ export function createSavedSgm(
       odds: l.odds,
       sportsbetOdds: l.sportsbetOdds,
       confidence: l.confidence,
+      recentFormHits: l.recentFormHits,
+      recentFormGames: l.recentFormGames,
     })),
     gameStatus: {
       complete: 0,
