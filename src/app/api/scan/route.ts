@@ -69,6 +69,7 @@ export async function POST(request: Request) {
       minConfidence:
         body.minConfidence != null ? Number(body.minConfidence) : 0,
       sportsbetOnly: body.sportsbetOnly === true,
+      perfectFormOnly: body.perfectFormOnly === true,
       bookmaker: body.bookmaker ? String(body.bookmaker) : undefined,
     });
 

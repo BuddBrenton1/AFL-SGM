@@ -1,4 +1,9 @@
-import { annotateLegsWithRecentForm } from "./engine/best-form";
+import {
+  annotateLegsWithRecentForm,
+  buildBestFormMulti,
+  BEST_MAX_LEG_PRICE,
+  isPerfectFormSbLeg,
+} from "./engine/best-form";
 import { resolveInsOuts } from "./ins-outs";
 import { playersForTeam } from "./players";
 import { fetchStandings, fetchUpcomingGames } from "./squiggle";
@@ -23,7 +28,6 @@ import type {
 } from "./types";
 import { BOUNCE_BUILD, BOUNCE_BUILD_NOTE } from "./build-info";
 import { generateLegsForGame } from "./engine/legs";
-import { buildBestFormMulti, BEST_MAX_LEG_PRICE } from "./engine/best-form";
 import { predictMatch } from "./engine/predict";
 import { deepScanGame } from "./engine/scanner";
 import { applyLiveFormToPlayers, loadLiveFormForTeams } from "./live-form";
@@ -210,6 +214,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   let combinationsChecked = 0;
   let gamesSkippedNoBoard = 0;
   let gamesSkippedSparsePrices = 0;
+  let gamesSkippedNoPerfectForm = 0;
   const scanNotes: string[] = [
     `Bounce build ${BOUNCE_BUILD} — ${BOUNCE_BUILD_NOTE}`,
     "Live fixtures & ladder via Squiggle API",
@@ -321,24 +326,43 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     // L5 hit badges on every player prop in the target/BEST pools
     legs = annotateLegsWithRecentForm(legs, gameLive, liveForm.byName);
 
-    const scanned = deepScanGame({
-      gameId: gameLive.id,
-      matchup: `${gameLive.homeTeam} vs ${gameLive.awayTeam}`,
-      venue: gameLive.venue,
-      round: gameLive.round,
-      legs,
-      mode,
-      legCount: req.legCount,
-      targetOdds: req.targetOdds,
-      maxSingleLegPrice: req.maxSingleLegPrice,
-      maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
-      sportsbetLink: board?.eventLink,
-      bookmakerLabel: book.label,
-      requireSportsbet: requireBook,
-    });
-    candidatesEvaluated += scanned.candidatesEvaluated;
-    combinationsChecked += scanned.combinationsChecked;
-    allMultis.push(...scanned.multis);
+    if (req.perfectFormOnly) {
+      const locks = legs.filter(isPerfectFormSbLeg);
+      if (locks.length < 2) {
+        gamesSkippedNoPerfectForm += 1;
+        scanNotes.push(
+          `5/5 ${book.shortLabel} skipped ${game.homeTeam} vs ${game.awayTeam}: only ${locks.length} lock${locks.length === 1 ? "" : "s"} (need 2+)`,
+        );
+        // Still build BEST below from the full annotated pool
+      } else {
+        legs = locks;
+        requireBook = true;
+      }
+    }
+
+    // When 5/5 mode found too few locks, don't invent non-5/5 target multis
+    if (req.perfectFormOnly && !legs.every(isPerfectFormSbLeg)) {
+      // skip target scan for this game; BEST still runs
+    } else {
+      const scanned = deepScanGame({
+        gameId: gameLive.id,
+        matchup: `${gameLive.homeTeam} vs ${gameLive.awayTeam}`,
+        venue: gameLive.venue,
+        round: gameLive.round,
+        legs,
+        mode,
+        legCount: req.legCount,
+        targetOdds: req.targetOdds,
+        maxSingleLegPrice: req.maxSingleLegPrice,
+        maxResults: Math.ceil(maxResults / Math.max(1, Math.min(selected.length, 4))),
+        sportsbetLink: board?.eventLink,
+        bookmakerLabel: book.label,
+        requireSportsbet: requireBook || !!req.perfectFormOnly,
+      });
+      candidatesEvaluated += scanned.candidatesEvaluated;
+      combinationsChecked += scanned.combinationsChecked;
+      allMultis.push(...scanned.multis);
+    }
 
     // BEST: live book player-prop lines ONLY — never Bounce model prices.
     // Falling back to model legs made every 20+ look like ~$1.17 with no SB badge.
@@ -425,6 +449,20 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     }
   }
 
+  if (req.perfectFormOnly) {
+    const before = multis.length;
+    multis = multis.filter((m) => m.legs.every(isPerfectFormSbLeg));
+    if (before > 0 && multis.length === 0) {
+      scanNotes.push(
+        `No target SGM had every leg at L5 5/5 with a live ${book.shortLabel} price — try more games, a higher max leg price, or turn off 5/5 ${book.shortLabel} only`,
+      );
+    } else if (multis.length > 0) {
+      scanNotes.push(
+        `5/5 ${book.shortLabel} only: ${multis.length} multi(s) — every leg cleared last-5 and has a live book price`,
+      );
+    }
+  }
+
   // Absolute last line of defence — never return a multi that breaks the user's
   // max per-leg price or sits wildly off the target total.
   const legCap = Math.max(1.01, Number(req.maxSingleLegPrice ?? 1.65));
@@ -474,7 +512,16 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       `Confidence floor: ${(minConf * 100).toFixed(0)}%+ (${multis.length} multis kept)`,
     );
   }
-  if (req.sportsbetOnly) {
+  if (req.perfectFormOnly) {
+    scanNotes.push(
+      `Filter: L5 5/5 + live ${book.shortLabel} only — match winner / totals excluded`,
+    );
+    if (gamesSkippedNoPerfectForm > 0) {
+      scanNotes.push(
+        `${gamesSkippedNoPerfectForm} fixture${gamesSkippedNoPerfectForm === 1 ? "" : "s"} lacked 2+ L5 5/5 ${book.shortLabel} locks for a target multi`,
+      );
+    }
+  } else if (req.sportsbetOnly) {
     scanNotes.push(
       `${book.label} preferred: use live ${book.shortLabel} markets when Odds API has them; Bounce fills player props when the book feed is thin`,
     );
@@ -507,6 +554,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
       maxSingleLegPrice: legCap,
       minConfidence: minConf,
       sportsbetOnly: !!req.sportsbetOnly,
+      perfectFormOnly: !!req.perfectFormOnly,
       bookmaker: book.id,
       bookmakerLabel: book.label,
       bookmakerShort: book.shortLabel,

@@ -219,6 +219,8 @@ export interface ScanRequest {
   minConfidence?: number;
   /** Only keep legs/multis that have live book prices */
   sportsbetOnly?: boolean;
+  /** Only legs with live book price AND full last-5 clears (L5 5/5) */
+  perfectFormOnly?: boolean;
   /** Selected odds platform (Sportsbet, TAB, Neds, …) */
   bookmaker?: string;
 }
@@ -232,6 +234,7 @@ export interface ScanResult {
     maxSingleLegPrice?: number;
     minConfidence?: number;
     sportsbetOnly?: boolean;
+    perfectFormOnly?: boolean;
     bookmaker?: string;
     bookmakerLabel?: string;
     bookmakerShort?: string;

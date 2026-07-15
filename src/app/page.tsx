@@ -68,6 +68,7 @@ export default function HomePage() {
   const [maxSingleLegPrice, setMaxSingleLegPrice] = useState(1.65);
   const [minConfidencePct, setMinConfidencePct] = useState(60);
   const [sportsbetOnly, setSportsbetOnly] = useState(false);
+  const [perfectFormOnly, setPerfectFormOnly] = useState(false);
   const [bookmaker, setBookmaker] = useState<BookmakerId>(DEFAULT_BOOKMAKER);
   const [selectedGames, setSelectedGames] = useState<number[]>([]);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -225,6 +226,7 @@ export default function HomePage() {
             maxSingleLegPrice,
             minConfidence: minConfidencePct / 100,
             sportsbetOnly,
+            perfectFormOnly,
             bookmaker,
             gameIds: selectedGames.length ? selectedGames : undefined,
             maxResults: 12,
@@ -665,7 +667,11 @@ export default function HomePage() {
                 </span>
                 <span className="btn-scan-meta">
                   ~${targetOdds} · ≤{legCount} legs · ≤${maxSingleLegPrice.toFixed(2)} ·{" "}
-                  {minConfidencePct === 0 ? "any conf" : `${minConfidencePct}%+`}
+                  {perfectFormOnly
+                    ? `5/5 ${book.shortLabel}`
+                    : minConfidencePct === 0
+                      ? "any conf"
+                      : `${minConfidencePct}%+`}
                 </span>
                 {(scanning || isPending) && (
                   <span className="scan-bar absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--orange)]" />
@@ -683,6 +689,7 @@ export default function HomePage() {
               className="mt-1 h-4 w-4 accent-[var(--turf)]"
               checked={sportsbetOnly}
               onChange={(e) => setSportsbetOnly(e.target.checked)}
+              disabled={perfectFormOnly}
             />
             <span>
               <span className="block text-sm font-semibold text-[var(--ink)]">
@@ -692,6 +699,32 @@ export default function HomePage() {
                 Rank live {book.label} prices first ({book.shortLabel} badge).
                 Odds API often only has AFL match markets — Bounce still fills
                 player props so the scan isn’t empty.
+                {perfectFormOnly
+                  ? ` Covered by 5/5 ${book.shortLabel} only below.`
+                  : ""}
+              </span>
+            </span>
+          </label>
+
+          <label className="mt-3 flex cursor-pointer items-start gap-3 border border-[var(--orange)]/40 bg-black/20 p-4">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 accent-[var(--orange)]"
+              checked={perfectFormOnly}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setPerfectFormOnly(on);
+                if (on) setSportsbetOnly(true);
+              }}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-[var(--ink)]">
+                5/5 {book.shortLabel} only
+              </span>
+              <span className="mt-1 block text-xs text-[var(--muted)]">
+                Every leg must have a live {book.shortLabel} price and cleared
+                the line in all of the last 5 games (L5 5/5). Match winner /
+                totals are excluded — player props only.
               </span>
             </span>
           </label>
@@ -912,6 +945,9 @@ export default function HomePage() {
                 )}
                 {result.target.sportsbetOnly && (
                   <span>Prefer {resultBook.label} prices</span>
+                )}
+                {result.target.perfectFormOnly && (
+                  <span>5/5 {resultBook.shortLabel} only</span>
                 )}
               </div>
               <div className="flex flex-wrap items-end gap-3">

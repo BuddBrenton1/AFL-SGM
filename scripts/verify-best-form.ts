@@ -4,6 +4,7 @@ import {
   collectBestFormLegs,
   countRecentFormHits,
   hitEveryRecentGame,
+  isPerfectFormSbLeg,
 } from "../src/lib/engine/best-form";
 import {
   applyLiveFormToPlayers,
@@ -17,6 +18,45 @@ assert.equal(hitEveryRecentGame([30, 22, 20, 17, 12], 14, 5).hits, 4);
 assert.equal(countRecentFormHits([30, 22, 20, 17, 12], 14, 5).hits, 4);
 assert.equal(countRecentFormHits([30, 22, 20, 17, 12], 14, 5).games, 5);
 assert.equal(countRecentFormHits([10, 8, 9, 7, 6], 14, 5).hits, 0);
+
+assert.equal(
+  isPerfectFormSbLeg({
+    id: "x",
+    gameId: 1,
+    market: "player_disposal",
+    label: "x",
+    shortLabel: "x",
+    probability: 0.8,
+    odds: 1.2,
+    sportsbetOdds: 1.2,
+    confidence: 0.8,
+    valueScore: 0,
+    factors: [],
+    correlationGroup: "x",
+    recentFormHits: 5,
+    recentFormGames: 5,
+  } as CandidateLeg),
+  true,
+);
+assert.equal(
+  isPerfectFormSbLeg({
+    id: "y",
+    gameId: 1,
+    market: "player_disposal",
+    label: "y",
+    shortLabel: "y",
+    probability: 0.8,
+    odds: 1.2,
+    sportsbetOdds: 1.2,
+    confidence: 0.8,
+    valueScore: 0,
+    factors: [],
+    correlationGroup: "y",
+    recentFormHits: 4,
+    recentFormGames: 5,
+  } as CandidateLeg),
+  false,
+);
 
 async function main() {
   const live = await loadLiveFormForTeams(["geelong"], 5);

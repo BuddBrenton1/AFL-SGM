@@ -214,6 +214,16 @@ export function isPlayerPropMarket(market: MarketType): boolean {
   );
 }
 
+/** Live book price + cleared the line in every game of a full last-5. */
+export function isPerfectFormSbLeg(leg: CandidateLeg): boolean {
+  if (leg.sportsbetOdds == null) return false;
+  if (!isPlayerPropMarket(leg.market)) return false;
+  const games = leg.recentFormGames;
+  const hits = leg.recentFormHits;
+  if (games == null || hits == null) return false;
+  return games >= BEST_FORM_MIN_GAMES && hits === games;
+}
+
 function findPlayer(
   leg: CandidateLeg,
   game: EnrichedGame,
