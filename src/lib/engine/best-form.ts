@@ -364,11 +364,12 @@ export function buildBestFormMulti(opts: {
   multi.rationale = [
     `BEST · ${clean.length} legs · each hit in all last ${BEST_FORM_GAMES} ESPN games`,
     `Each leg ≤ $${maxPrice.toFixed(2)} (your max per-leg)`,
-    opts.requireSportsbet !== false
-      ? `Live ${opts.bookmakerLabel ?? "book"} player props only`
-      : "Player props (book prices when matched)",
+    `Live ${opts.bookmakerLabel ?? "book"} prices only — no Bounce model fill-ins`,
     ...multi.rationale.filter(
-      (r) => !r.startsWith("BEST ·") && !r.startsWith("Each leg ≤"),
+      (r) =>
+        !r.startsWith("BEST ·") &&
+        !r.startsWith("Each leg ≤") &&
+        !r.startsWith("Live "),
     ),
   ];
   multi.edgeScore += 0.15;

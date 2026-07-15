@@ -923,9 +923,9 @@ export default function HomePage() {
                     BEST per game
                   </h3>
                   <p className="text-sm text-[var(--muted)]">
-                    ESPN last-5 box scores only — a prop must clear in all 5
-                    recent games (no seed guesses, no 4-game partials). Uses
-                    your max per-leg. Build{" "}
+                    ESPN last-5 only + live {resultBook.label} prices only (no
+                    Bounce model odds). Must clear all 5 recent games and stay
+                    under your max per-leg. Build{" "}
                     <span className="font-semibold text-[var(--orange)]">
                       {BOUNCE_BUILD}
                     </span>

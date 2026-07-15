@@ -299,29 +299,64 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     combinationsChecked += scanned.combinationsChecked;
     allMultis.push(...scanned.multis);
 
-    // BEST: always prefer live book player-prop lines + ESPN form locks
+    // BEST: live book player-prop lines ONLY — never Bounce model prices.
+    // Falling back to model legs made every 20+ look like ~$1.17 with no SB badge.
     const boardLegs = board
       ? legsFromSportsbetBoard(board, gameLive, bookmaker)
       : [];
-    const bestLegs = (() => {
-      const byId = new Map<string, (typeof legs)[number]>();
-      for (const leg of [...legs, ...boardLegs]) {
-        if (leg.sportsbetOdds == null && board) continue;
-        byId.set(leg.id, leg);
+    const sbPricedModel = legs.filter((l) => l.sportsbetOdds != null);
+    const bestPool = (() => {
+      const byKey = new Map<string, (typeof legs)[number]>();
+      // Prefer raw board markets (correct Over X.5 selection + live price)
+      for (const leg of boardLegs) {
+        if (leg.sportsbetOdds == null) continue;
+        if (!leg.playerId && !leg.playerName) continue;
+        const key = [
+          leg.market,
+          leg.playerId ?? leg.playerName,
+          leg.threshold ?? leg.sportsbetPoint ?? "",
+        ].join(":");
+        byKey.set(key, leg);
       }
-      return [...byId.values()];
+      // Fill gaps with model legs that successfully matched a live book price
+      for (const leg of sbPricedModel) {
+        if (!leg.playerId && !leg.playerName) continue;
+        const key = [
+          leg.market,
+          leg.playerId ?? leg.playerName,
+          leg.threshold ?? leg.sportsbetPoint ?? "",
+        ].join(":");
+        if (!byKey.has(key)) byKey.set(key, leg);
+      }
+      return [...byKey.values()];
     })();
-    const best = buildBestFormMulti({
-      game: gameLive,
-      legs: bestLegs.length ? bestLegs : legs,
-      sportsbetLink: board?.eventLink,
-      bookmakerLabel: book.label,
-      requireSportsbet: !!board,
-      maxLegPrice: req.maxSingleLegPrice ?? BEST_MAX_LEG_PRICE,
-      liveByName: liveForm.byName,
-    });
-    if (best) {
-      allBest.push(best);
+
+    if (!board) {
+      // No book board → skip BEST for this fixture (don't invent model "locks")
+    } else if (bestPool.length < 2) {
+      scanNotes.push(
+        `BEST skipped ${game.homeTeam} vs ${game.awayTeam}: not enough live ${book.shortLabel} player props matched`,
+      );
+    } else {
+      const best = buildBestFormMulti({
+        game: gameLive,
+        legs: bestPool,
+        sportsbetLink: board.eventLink,
+        bookmakerLabel: book.label,
+        requireSportsbet: true,
+        maxLegPrice: req.maxSingleLegPrice ?? BEST_MAX_LEG_PRICE,
+        liveByName: liveForm.byName,
+      });
+      if (best) {
+        // Belt-and-braces: every BEST leg must carry a live book price
+        if (best.legs.every((l) => l.sportsbetOdds != null)) {
+          allBest.push(best);
+        } else {
+          scanNotes.push(
+            `BEST dropped ${game.homeTeam} vs ${game.awayTeam}: a lock lost its ${book.shortLabel} price`,
+          );
+        }
+      }
     }
   }
 
@@ -373,17 +408,21 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     );
   }
 
-  // BEST multis must also respect the user's max per-leg (they are not target-banded)
+  // BEST multis must also respect the user's max per-leg AND keep live book prices
   const beforeBest = allBest.length;
   const bestMultis = allBest.filter((m) =>
     m.legs.every((leg) => {
-      const p = Number(leg.sportsbetOdds ?? leg.odds);
-      return Number.isFinite(p) && p <= legCap + 0.001;
+      const p = Number(leg.sportsbetOdds);
+      return (
+        leg.sportsbetOdds != null &&
+        Number.isFinite(p) &&
+        p <= legCap + 0.001
+      );
     }),
   );
   if (beforeBest > 0 && bestMultis.length < beforeBest) {
     scanNotes.push(
-      `BEST: dropped ${beforeBest - bestMultis.length} multi(s) with a leg over $${legCap.toFixed(2)}`,
+      `BEST: dropped ${beforeBest - bestMultis.length} multi(s) missing live ${book.shortLabel} prices or over $${legCap.toFixed(2)}`,
     );
   }
 
