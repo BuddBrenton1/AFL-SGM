@@ -248,5 +248,6 @@ export interface ScanResult {
     bookmakerShort?: string;
     remainingRequests?: number | null;
     lastError?: string;
+    quotaExhausted?: boolean;
   };
 }

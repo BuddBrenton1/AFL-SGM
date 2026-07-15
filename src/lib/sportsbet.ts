@@ -19,6 +19,8 @@ export interface SportsbetStatus {
   bookmakerShort?: string;
   remainingRequests?: number | null;
   lastError?: string;
+  /** True when Odds API returned OUT_OF_USAGE_CREDITS */
+  quotaExhausted?: boolean;
 }
 
 export interface SportsbetPriceLine {
@@ -210,7 +212,32 @@ function teamNamesCompatible(homeA: string, awayA: string, homeB: string, awayB:
   );
 }
 
-async function oddsFetch(path: string): Promise<{
+function parseOddsApiFailure(status: number, body: string): Error {
+  const snippet = body.slice(0, 220);
+  let code = "";
+  try {
+    const parsed = JSON.parse(body) as { error_code?: string; message?: string };
+    code = parsed.error_code ?? "";
+    if (code === "OUT_OF_USAGE_CREDITS" || /quota has been reached/i.test(body)) {
+      const err = new Error(
+        "Odds API quota exhausted — no live book prices until credits reset or you replace ODDS_API_KEY at the-odds-api.com",
+      );
+      (err as Error & { quotaExhausted?: boolean }).quotaExhausted = true;
+      return err;
+    }
+    if (parsed.message) {
+      return new Error(`Odds API ${status}: ${parsed.message.slice(0, 160)}`);
+    }
+  } catch {
+    /* plain text body */
+  }
+  return new Error(`Odds API ${status}: ${snippet}`);
+}
+
+async function oddsFetch(
+  path: string,
+  opts?: { revalidate?: number | false },
+): Promise<{
   data: unknown;
   remaining: number | null;
 }> {
@@ -218,9 +245,12 @@ async function oddsFetch(path: string): Promise<{
   if (!key) throw new Error("ODDS_API_KEY not set");
 
   const url = `${BASE}${path}${path.includes("?") ? "&" : "?"}apiKey=${encodeURIComponent(key)}`;
+  const revalidate = opts?.revalidate;
   const res = await fetch(url, {
     headers: { Accept: "application/json" },
-    next: { revalidate: 120 },
+    ...(revalidate === false
+      ? { cache: "no-store" as const }
+      : { next: { revalidate: revalidate ?? 300 } }),
   });
 
   const remainingHeader = res.headers.get("x-requests-remaining");
@@ -228,10 +258,84 @@ async function oddsFetch(path: string): Promise<{
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Odds API ${res.status}: ${body.slice(0, 180)}`);
+    throw parseOddsApiFailure(res.status, body);
   }
 
   return { data: await res.json(), remaining };
+}
+
+/** Free (0 credit) event list — also returns remaining quota in headers. */
+export async function fetchAflEventList(): Promise<{
+  events: { id: string; homeTeam: string; awayTeam: string; commenceTime: string }[];
+  remaining: number | null;
+}> {
+  const { data, remaining } = await oddsFetch(`/sports/${SPORT}/events`, {
+    revalidate: false,
+  });
+  const events = (data as OddsApiEvent[]).map((e) => ({
+    id: e.id,
+    homeTeam: e.home_team,
+    awayTeam: e.away_team,
+    commenceTime: e.commence_time,
+  }));
+  return { events, remaining };
+}
+
+/**
+ * Lightweight status check — uses the free /events endpoint so the UI can
+ * show "quota exhausted" without burning scan credits.
+ */
+export async function probeSportsbetStatus(
+  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
+): Promise<SportsbetStatus> {
+  const book = getBookmaker(bookmakerId);
+  const base = getSportsbetConfigStatus(book.id);
+  if (!base.configured) return base;
+
+  try {
+    const { events, remaining } = await fetchAflEventList();
+    if (remaining != null && remaining <= 0) {
+      return {
+        configured: true,
+        connected: false,
+        bookmakerId: book.id,
+        bookmakerLabel: book.label,
+        bookmakerShort: book.shortLabel,
+        remainingRequests: remaining,
+        quotaExhausted: true,
+        message: `Odds API quota exhausted (${remaining} credits) — live ${book.shortLabel} prices unavailable`,
+        lastError:
+          "Replace or top up ODDS_API_KEY at the-odds-api.com, then redeploy. Free tier resets monthly.",
+      };
+    }
+    return {
+      configured: true,
+      connected: true,
+      bookmakerId: book.id,
+      bookmakerLabel: book.label,
+      bookmakerShort: book.shortLabel,
+      remainingRequests: remaining,
+      message: `${book.label} ready — ${events.length} AFL event${events.length === 1 ? "" : "s"} on Odds API${
+        remaining != null ? ` · ${remaining} credits left` : ""
+      }.`,
+    };
+  } catch (err) {
+    const quotaExhausted = Boolean(
+      (err as Error & { quotaExhausted?: boolean })?.quotaExhausted,
+    );
+    return {
+      configured: true,
+      connected: false,
+      bookmakerId: book.id,
+      bookmakerLabel: book.label,
+      bookmakerShort: book.shortLabel,
+      quotaExhausted,
+      message: quotaExhausted
+        ? `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`
+        : `${book.label} probe failed — using Bounce model odds.`,
+      lastError: err instanceof Error ? err.message : "Probe failed",
+    };
+  }
 }
 
 function extractSportsbet(
@@ -267,41 +371,76 @@ function extractSportsbet(
   };
 }
 
-const FEATURED_MARKETS = "h2h,spreads,totals";
-const PROP_MARKETS = [
+/**
+ * One event-odds call per fixture: match markets + player props.
+ * Cost = markets × regions (au) per event — keep this list tight.
+ */
+const EVENT_MARKETS = [
+  "h2h",
+  "totals",
   "player_goal_scorer_anytime",
   "player_goals_scored_over",
-  "player_disposals",
   "player_disposals_over",
   "player_tackles_over",
   "player_marks_over",
 ].join(",");
 
-export async function fetchSportsbetFeaturedOdds(
-  bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
-): Promise<{
-  events: SportsbetEventOdds[];
-  remaining: number | null;
-}> {
-  const book = getBookmaker(bookmakerId);
-  const { data, remaining } = await oddsFetch(
-    `/sports/${SPORT}/odds?regions=au&bookmakers=${book.apiKey}&markets=${FEATURED_MARKETS}&oddsFormat=decimal&includeLinks=true`,
-  );
-  const events = (data as OddsApiEvent[])
-    .map((e) => extractSportsbet(e, book.apiKey))
-    .filter((e): e is SportsbetEventOdds => e !== null);
-  return { events, remaining };
+const MAX_BOARD_EVENTS = 5;
+const BOARD_CACHE_TTL_MS = 8 * 60 * 1000;
+
+type BoardCache = {
+  key: string;
+  expiresAt: number;
+  byMatchup: Map<string, SportsbetEventOdds>;
+  status: SportsbetStatus;
+};
+
+let boardCache: BoardCache | null = null;
+
+function matchupsCacheKey(
+  matchups: { homeTeam: string; awayTeam: string }[],
+  bookmakerId: BookmakerId,
+): string {
+  const parts = matchups
+    .map(
+      (m) =>
+        `${normalizeName(m.homeTeam)}:${normalizeName(m.awayTeam)}`,
+    )
+    .sort();
+  return `${bookmakerId}|${parts.join(";")}`;
 }
 
-export async function fetchSportsbetEventProps(
+function storeBoardAliases(
+  byMatchup: Map<string, SportsbetEventOdds>,
+  board: SportsbetEventOdds,
+  aliases: { homeTeam: string; awayTeam: string }[],
+) {
+  const keys = new Set<string>();
+  for (const a of aliases) {
+    keys.add(`${normalizeName(a.homeTeam)}|${normalizeName(a.awayTeam)}`);
+    keys.add(`${normalizeName(a.awayTeam)}|${normalizeName(a.homeTeam)}`);
+    const homeId = resolveTeamId(a.homeTeam);
+    const awayId = resolveTeamId(a.awayTeam);
+    if (homeId && awayId) {
+      keys.add(`${homeId}|${awayId}`);
+      keys.add(`${awayId}|${homeId}`);
+    }
+  }
+  for (const key of keys) byMatchup.set(key, board);
+}
+
+export async function fetchSportsbetEventOdds(
   eventId: string,
   bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
-): Promise<SportsbetEventOdds | null> {
+): Promise<{ board: SportsbetEventOdds | null; remaining: number | null }> {
   const book = getBookmaker(bookmakerId);
-  const { data } = await oddsFetch(
-    `/sports/${SPORT}/events/${eventId}/odds?regions=au&bookmakers=${book.apiKey}&markets=${PROP_MARKETS}&oddsFormat=decimal&includeLinks=true`,
+  const { data, remaining } = await oddsFetch(
+    `/sports/${SPORT}/events/${eventId}/odds?regions=au&bookmakers=${book.apiKey}&markets=${EVENT_MARKETS}&oddsFormat=decimal&includeLinks=true`,
   );
-  return extractSportsbet(data as OddsApiEvent, book.apiKey);
+  return {
+    board: extractSportsbet(data as OddsApiEvent, book.apiKey),
+    remaining,
+  };
 }
 
 export async function loadSportsbetBoard(
@@ -321,70 +460,124 @@ export async function loadSportsbetBoard(
     return { byMatchup, status: baseStatus };
   }
 
-  try {
-    const { events, remaining } = await fetchSportsbetFeaturedOdds(book.id);
+  if (matchups.length === 0) {
+    // Don't burn credits for an empty slate — probe is free.
+    const probed = await probeSportsbetStatus(book.id);
+    return { byMatchup, status: probed };
+  }
 
-    // Match fixtures and pull props for overlapping games (cap to save credits)
-    const matched: SportsbetEventOdds[] = [];
+  const cacheKey = matchupsCacheKey(matchups, book.id);
+  if (
+    boardCache &&
+    boardCache.key === cacheKey &&
+    boardCache.expiresAt > Date.now()
+  ) {
+    return {
+      byMatchup: boardCache.byMatchup,
+      status: {
+        ...boardCache.status,
+        message: `${boardCache.status.message} (cached)`,
+      },
+    };
+  }
+
+  try {
+    // Free event list → match Squiggle names → one paid call per fixture
+    const { events, remaining: listRemaining } = await fetchAflEventList();
+    if (listRemaining != null && listRemaining <= 0) {
+      const status: SportsbetStatus = {
+        configured: true,
+        connected: false,
+        bookmakerId: book.id,
+        bookmakerLabel: book.label,
+        bookmakerShort: book.shortLabel,
+        remainingRequests: listRemaining,
+        quotaExhausted: true,
+        message: `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`,
+        lastError:
+          "Replace or top up ODDS_API_KEY at the-odds-api.com, then redeploy.",
+      };
+      return { byMatchup, status };
+    }
+
+    const pairs: {
+      matchup: { homeTeam: string; awayTeam: string };
+      eventId: string;
+      homeTeam: string;
+      awayTeam: string;
+    }[] = [];
     for (const m of matchups) {
       const hit = events.find((e) =>
         teamNamesCompatible(m.homeTeam, m.awayTeam, e.homeTeam, e.awayTeam),
       );
-      if (hit) matched.push(hit);
+      if (hit) {
+        pairs.push({
+          matchup: m,
+          eventId: hit.id,
+          homeTeam: hit.homeTeam,
+          awayTeam: hit.awayTeam,
+        });
+      }
     }
 
-    const limited = matched.slice(0, 6);
+    const limited = pairs.slice(0, MAX_BOARD_EVENTS);
+    let remaining = listRemaining;
+    let loaded = 0;
+    let propLines = 0;
+
     await Promise.all(
-      limited.map(async (ev) => {
+      limited.map(async ({ matchup, eventId, homeTeam, awayTeam }) => {
         try {
-          const props = await fetchSportsbetEventProps(ev.eventId, book.id);
-          if (props) {
-            // merge featured + props lines
-            const merged: SportsbetEventOdds = {
-              ...ev,
-              lines: [...ev.lines, ...props.lines],
-              lastUpdate: props.lastUpdate ?? ev.lastUpdate,
-              eventLink: props.eventLink ?? ev.eventLink,
-            };
-            byMatchup.set(
-              `${normalizeName(ev.homeTeam)}|${normalizeName(ev.awayTeam)}`,
-              merged,
-            );
-            byMatchup.set(
-              `${normalizeName(ev.awayTeam)}|${normalizeName(ev.homeTeam)}`,
-              merged,
-            );
-          } else {
-            byMatchup.set(
-              `${normalizeName(ev.homeTeam)}|${normalizeName(ev.awayTeam)}`,
-              ev,
-            );
-          }
-        } catch {
-          byMatchup.set(
-            `${normalizeName(ev.homeTeam)}|${normalizeName(ev.awayTeam)}`,
-            ev,
+          const { board, remaining: rem } = await fetchSportsbetEventOdds(
+            eventId,
+            book.id,
           );
+          if (rem != null) remaining = rem;
+          if (!board) return;
+          loaded += 1;
+          propLines += board.lines.filter((l) =>
+            l.marketKey.startsWith("player_"),
+          ).length;
+          storeBoardAliases(byMatchup, board, [
+            { homeTeam, awayTeam },
+            { homeTeam: matchup.homeTeam, awayTeam: matchup.awayTeam },
+          ]);
+        } catch (err) {
+          if ((err as Error & { quotaExhausted?: boolean })?.quotaExhausted) {
+            throw err;
+          }
+          // Skip this fixture; others may still load
         }
       }),
     );
 
-    return {
-      byMatchup,
-      status: {
-        configured: true,
-        connected: true,
-        bookmakerId: book.id,
-        bookmakerLabel: book.label,
-        bookmakerShort: book.shortLabel,
-        message:
-          byMatchup.size > 0
-            ? `${book.label} prices linked for ${limited.length} fixture${limited.length === 1 ? "" : "s"}.`
-            : `Connected, but no ${book.label} markets matched this slate yet.`,
-        remainingRequests: remaining,
-      },
+    const status: SportsbetStatus = {
+      configured: true,
+      connected: loaded > 0,
+      bookmakerId: book.id,
+      bookmakerLabel: book.label,
+      bookmakerShort: book.shortLabel,
+      remainingRequests: remaining,
+      message:
+        loaded > 0
+          ? `${book.label} prices linked for ${loaded} fixture${loaded === 1 ? "" : "s"} (${propLines} player lines).`
+          : pairs.length === 0
+            ? `Connected, but no Odds API events matched this Squiggle slate yet.`
+            : `Matched ${pairs.length} fixture${pairs.length === 1 ? "" : "s"} but ${book.label} returned no markets.`,
     };
+
+    boardCache = {
+      key: cacheKey,
+      expiresAt: Date.now() + BOARD_CACHE_TTL_MS,
+      byMatchup,
+      status,
+    };
+
+    return { byMatchup, status };
   } catch (err) {
+    const quotaExhausted = Boolean(
+      (err as Error & { quotaExhausted?: boolean })?.quotaExhausted,
+    );
     return {
       byMatchup,
       status: {
@@ -393,7 +586,10 @@ export async function loadSportsbetBoard(
         bookmakerId: book.id,
         bookmakerLabel: book.label,
         bookmakerShort: book.shortLabel,
-        message: `${book.label} link failed — using Bounce model odds.`,
+        quotaExhausted,
+        message: quotaExhausted
+          ? `Odds API quota exhausted — live ${book.shortLabel} prices unavailable`
+          : `${book.label} link failed — using Bounce model odds.`,
         lastError: err instanceof Error ? err.message : "Unknown error",
       },
     };
@@ -791,9 +987,17 @@ export function lookupSportsbetBoard(
   homeTeam: string,
   awayTeam: string,
 ): SportsbetEventOdds | undefined {
+  const homeId = resolveTeamId(homeTeam);
+  const awayId = resolveTeamId(awayTeam);
   return (
     map.get(`${normalizeName(homeTeam)}|${normalizeName(awayTeam)}`) ??
-    map.get(`${normalizeName(awayTeam)}|${normalizeName(homeTeam)}`)
+    map.get(`${normalizeName(awayTeam)}|${normalizeName(homeTeam)}`) ??
+    (homeId && awayId ? map.get(`${homeId}|${awayId}`) : undefined) ??
+    (homeId && awayId ? map.get(`${awayId}|${homeId}`) : undefined) ??
+    // Last resort: scan boards with team-id compatible names
+    [...map.values()].find((board) =>
+      teamNamesCompatible(homeTeam, awayTeam, board.homeTeam, board.awayTeam),
+    )
   );
 }
 

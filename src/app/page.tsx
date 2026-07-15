@@ -82,6 +82,8 @@ export default function HomePage() {
     bookmakerLabel?: string;
     bookmakerShort?: string;
     remainingRequests?: number | null;
+    lastError?: string;
+    quotaExhausted?: boolean;
   } | null>(null);
 
   const book = useMemo(() => getBookmaker(bookmaker), [bookmaker]);
@@ -271,23 +273,31 @@ export default function HomePage() {
             </a>
             <div
               className="hidden items-center gap-2 border border-[var(--line)] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-strong)] md:flex"
-              title={sportsbetStatus?.message}
+              title={
+                sportsbetStatus?.lastError
+                  ? `${sportsbetStatus.message} — ${sportsbetStatus.lastError}`
+                  : sportsbetStatus?.message
+              }
             >
               <span
                 className={`h-1.5 w-1.5 ${
-                  sportsbetStatus?.connected
-                    ? "bg-[var(--orange)]"
-                    : sportsbetStatus?.configured
-                      ? "bg-[var(--flood)]"
-                      : "bg-[var(--stone)]"
+                  sportsbetStatus?.quotaExhausted
+                    ? "bg-[var(--flood)]"
+                    : sportsbetStatus?.connected
+                      ? "bg-[var(--orange)]"
+                      : sportsbetStatus?.configured
+                        ? "bg-[var(--flood)]"
+                        : "bg-[var(--stone)]"
                 }`}
               />
               {book.label}{" "}
-              {sportsbetStatus?.connected
-                ? "live"
-                : sportsbetStatus?.configured
-                  ? "keyed"
-                  : "off"}
+              {sportsbetStatus?.quotaExhausted
+                ? "quota"
+                : sportsbetStatus?.connected
+                  ? "live"
+                  : sportsbetStatus?.configured
+                    ? "keyed"
+                    : "off"}
             </div>
           </nav>
         </div>
@@ -411,28 +421,55 @@ export default function HomePage() {
 
           <div
             className={`mt-5 border px-4 py-3 text-sm ${
-              sportsbetStatus?.configured
-                ? "border-[var(--orange)]/30 bg-black/25 text-[var(--muted-strong)]"
-                : "border-[var(--orange)]/40 bg-[var(--paper-warm)] text-[var(--flood)]"
+              sportsbetStatus?.quotaExhausted
+                ? "border-[var(--flood)]/50 bg-[var(--paper-warm)] text-[var(--flood)]"
+                : sportsbetStatus?.connected
+                  ? "border-[var(--orange)]/30 bg-black/25 text-[var(--muted-strong)]"
+                  : sportsbetStatus?.configured
+                    ? "border-[var(--orange)]/40 bg-black/25 text-[var(--muted-strong)]"
+                    : "border-[var(--orange)]/40 bg-[var(--paper-warm)] text-[var(--flood)]"
             }`}
           >
             <p className="font-semibold text-[var(--ink)]">
               {book.label}{" "}
-              {sportsbetStatus?.connected
-                ? "· live prices"
-                : sportsbetStatus?.configured
-                  ? "· key set"
-                  : "· not linked"}
+              {sportsbetStatus?.quotaExhausted
+                ? "· quota exhausted"
+                : sportsbetStatus?.connected
+                  ? "· live prices"
+                  : sportsbetStatus?.configured
+                    ? "· key set"
+                    : "· not linked"}
             </p>
             <p className="mt-1 text-xs opacity-90">
               {sportsbetStatus?.message ??
                 `Add ODDS_API_KEY from the-odds-api.com to pull live ${book.label} AFL prices.`}
             </p>
+            {sportsbetStatus?.lastError && (
+              <p className="mt-2 text-xs font-medium text-[var(--flood)]">
+                {sportsbetStatus.lastError}
+              </p>
+            )}
             {!sportsbetStatus?.configured && (
               <p className="mt-2 text-xs">
                 Copy <code className="bg-black/40 px-1 text-[var(--orange)]">.env.example</code> →{" "}
                 <code className="bg-black/40 px-1 text-[var(--orange)]">.env.local</code>, set{" "}
                 <code className="bg-black/40 px-1 text-[var(--orange)]">ODDS_API_KEY</code>, restart.
+                On Vercel, set the same env var and redeploy.
+              </p>
+            )}
+            {sportsbetStatus?.quotaExhausted && (
+              <p className="mt-2 text-xs">
+                Get a fresh key at{" "}
+                <a
+                  href="https://the-odds-api.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[var(--orange)] underline"
+                >
+                  the-odds-api.com
+                </a>
+                , set <code className="bg-black/40 px-1">ODDS_API_KEY</code> on Vercel, redeploy.
+                Until then every leg is Bounce model-only (no SB badge).
               </p>
             )}
             {sportsbetStatus?.remainingRequests != null && (

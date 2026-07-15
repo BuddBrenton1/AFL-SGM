@@ -227,6 +227,11 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   } else if (sportsbetStatus.configured) {
     scanNotes.push(sportsbetStatus.message);
     if (sportsbetStatus.lastError) scanNotes.push(sportsbetStatus.lastError);
+    if (sportsbetStatus.quotaExhausted) {
+      scanNotes.push(
+        "No SB badges until Odds API credits are available — replace ODDS_API_KEY in Vercel and redeploy",
+      );
+    }
   } else {
     scanNotes.push(
       `${book.label} not linked — set ODDS_API_KEY for live prices (the-odds-api.com)`,
@@ -256,12 +261,39 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     let legs = applySportsbetPrices(rawLegs, board, bookmaker);
     let requireBook = false;
 
+    // Always merge raw board lines so Over X.5 props show SB prices even when
+    // Bounce model thresholds don't line up with the book.
+    const boardLegs = board
+      ? legsFromSportsbetBoard(board, gameLive, bookmaker)
+      : [];
+    if (boardLegs.length > 0) {
+      const seen = new Set(
+        legs.map((l) =>
+          [
+            l.market,
+            l.playerId ?? l.playerName ?? "",
+            l.threshold ?? l.sportsbetPoint ?? "",
+          ].join(":"),
+        ),
+      );
+      for (const bl of boardLegs) {
+        const key = [
+          bl.market,
+          bl.playerId ?? bl.playerName ?? "",
+          bl.threshold ?? bl.sportsbetPoint ?? "",
+        ].join(":");
+        if (!seen.has(key)) {
+          legs.push(bl);
+          seen.add(key);
+        }
+      }
+    }
+
     if (req.sportsbetOnly) {
       if (!board) {
         gamesSkippedNoBoard += 1;
         // Still scan with model legs — Odds API often has no board yet
       } else {
-        const boardLegs = legsFromSportsbetBoard(board, gameLive, bookmaker);
         const minLegsNeeded = Math.min(25, Math.max(2, req.legCount ?? 10));
         const livePriced = legs.filter((l) => l.sportsbetOdds != null);
 
@@ -301,9 +333,6 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
     // BEST: live book player-prop lines ONLY — never Bounce model prices.
     // Falling back to model legs made every 20+ look like ~$1.17 with no SB badge.
-    const boardLegs = board
-      ? legsFromSportsbetBoard(board, gameLive, bookmaker)
-      : [];
     const sbPricedModel = legs.filter((l) => l.sportsbetOdds != null);
     const bestPool = (() => {
       const byKey = new Map<string, (typeof legs)[number]>();

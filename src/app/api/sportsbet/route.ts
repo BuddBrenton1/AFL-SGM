@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_BOOKMAKER, isBookmakerId } from "@/lib/bookmakers";
 import { sportsbetStatusOnly } from "@/lib/scan";
-import { loadSportsbetBoard } from "@/lib/sportsbet";
+import { probeSportsbetStatus } from "@/lib/sportsbet";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +13,23 @@ export async function GET(request: Request) {
     raw && isBookmakerId(raw) ? raw : DEFAULT_BOOKMAKER;
   const base = sportsbetStatusOnly(bookmaker);
 
-  if (!probe || !base.configured) {
-    return NextResponse.json(base);
+  // Default: free probe so the UI shows quota / connection before a scan burns credits
+  if (!probe) {
+    if (!base.configured) return NextResponse.json(base);
+    try {
+      return NextResponse.json(await probeSportsbetStatus(bookmaker));
+    } catch (err) {
+      return NextResponse.json({
+        ...base,
+        connected: false,
+        lastError: err instanceof Error ? err.message : "Probe failed",
+      });
+    }
   }
 
+  // probe=1 is the same free check (kept for backwards compatibility)
   try {
-    const { status } = await loadSportsbetBoard([], bookmaker);
-    return NextResponse.json(status);
+    return NextResponse.json(await probeSportsbetStatus(bookmaker));
   } catch (err) {
     return NextResponse.json({
       ...base,
