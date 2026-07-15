@@ -39,7 +39,15 @@ function namesMatch(a: string, b: string): boolean {
   const aFirst = ap[0];
   const bFirst = bp[0];
   if (aFirst === bFirst && aLast === bLast) return true;
-  if (aLast === bLast && aFirst[0] === bFirst[0]) return true;
+  // Tom / Thomas / Tommy + same surname
+  if (
+    aLast === bLast &&
+    (aFirst[0] === bFirst[0] ||
+      aFirst.startsWith(bFirst) ||
+      bFirst.startsWith(aFirst))
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -144,37 +152,11 @@ export function annotateLegsWithRecentForm(
     if (clearLine == null) return leg;
 
     const player = findPlayer(leg, game);
-    // ESPN first — works even when the athlete isn't in the seed roster
+    // ESPN only — never invented seed last5 (those fake 5/5 badges).
     const live = lookupLiveFormForAnnotation(liveByName, player, leg);
+    if (!live) return leg;
 
-    let recent: number[] = [];
-    let source: "ESPN" | "form" = "form";
-
-    if (live) {
-      recent = recentValuesForMarket(live, leg.market);
-      source = "ESPN";
-    } else if (player) {
-      // Seed tackle/mark arrays are often inferred from disposals — don't badge those
-      if (
-        leg.market === "player_mark" &&
-        !player.marksExplicit &&
-        player.formSource !== "espn"
-      ) {
-        return leg;
-      }
-      if (
-        leg.market === "player_tackle" &&
-        !player.tacklesExplicit &&
-        player.formSource !== "espn"
-      ) {
-        return leg;
-      }
-      recent = formValuesForMarket(player, leg.market);
-      source = player.formSource === "espn" ? "ESPN" : "form";
-    } else {
-      return leg;
-    }
-
+    const recent = recentValuesForMarket(live, leg.market);
     const hit = countRecentFormHits(recent, clearLine, BEST_FORM_GAMES);
     if (hit.games < 1) return leg;
 
@@ -188,7 +170,7 @@ export function annotateLegsWithRecentForm(
     return {
       ...leg,
       playerId: leg.playerId ?? player?.id,
-      playerName: leg.playerName ?? player?.name ?? live?.name,
+      playerName: leg.playerName ?? player?.name ?? live.name,
       recentFormHits: hit.hits,
       recentFormGames: hit.games,
       factors: [
@@ -197,7 +179,7 @@ export function annotateLegsWithRecentForm(
           key: "recent-form",
           label: "Recent form",
           impact,
-          detail: `L${hit.games} ${hit.hits}/${hit.games} · ${clearLine}+ [${hit.values.join(", ")}] · ${source}`,
+          detail: `L${hit.games} ${hit.hits}/${hit.games} · ${clearLine}+ [${hit.values.join(", ")}] · ESPN`,
           weight: hit.hits === hit.games ? 0.02 : hit.rate < 0.4 ? -0.02 : 0,
         },
       ],

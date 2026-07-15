@@ -1,11 +1,18 @@
 /**
  * Live last-5 player form from ESPN box scores.
  * Replaces inferred seed tackle/mark lines so BEST locks aren't fake.
+ *
+ * Take the last N games the athlete **played**, not the last N club fixtures.
+ * Missed rounds (injury/out) used to shrink the window and fall back to invented
+ * seed form — e.g. Tom Stewart 18+ falsely showing L5 5/5 instead of 3/5.
  */
 
 import type { PlayerProfile, TeamId } from "./types";
 import { fetchEspnMatchBox, teamsLooselyMatch } from "./espn-stats";
 import { TEAMS } from "./teams";
+
+/** How many completed club fixtures to scan to find N played games. */
+const SCHEDULE_LOOKBACK = 12;
 
 const ESPN_TEAM_IDS: Partial<Record<TeamId, string>> = {
   adelaide: "15",
@@ -71,7 +78,15 @@ function namesMatch(a: string, b: string): boolean {
   const aFirst = ap[0];
   const bFirst = bp[0];
   if (aFirst === bFirst && aLast === bLast) return true;
-  if (aLast === bLast && aFirst[0] === bFirst[0]) return true;
+  // Tom / Thomas / Tommy + same surname
+  if (
+    aLast === bLast &&
+    (aFirst[0] === bFirst[0] ||
+      aFirst.startsWith(bFirst) ||
+      bFirst.startsWith(aFirst))
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -103,7 +118,7 @@ function mean(values: number[]): number {
 
 async function completedEventIdsForTeam(
   espnTeamId: string,
-  limit = 5,
+  limit = SCHEDULE_LOOKBACK,
 ): Promise<string[]> {
   const board = await espnJson<EspnSchedule>(
     `https://site.api.espn.com/apis/site/v2/sports/australian-football/afl/teams/${espnTeamId}/schedule`,
@@ -147,7 +162,11 @@ export async function loadLiveFormForTeams(
     unique.map(async (teamId) => {
       const espnId = ESPN_TEAM_IDS[teamId];
       if (!espnId) return { teamId, eventIds: [] as string[] };
-      const eventIds = await completedEventIdsForTeam(espnId, games);
+      // Look back further than `games` so injured rounds don't shrink the window
+      const eventIds = await completedEventIdsForTeam(
+        espnId,
+        Math.max(SCHEDULE_LOOKBACK, games * 2),
+      );
       return { teamId, eventIds };
     }),
   );
@@ -186,6 +205,7 @@ export async function loadLiveFormForTeams(
           tackles: [],
         };
         existing.teamId = teamId;
+        existing.name = row.name;
         existing.goals.push(row.goals);
         existing.disposals.push(row.disposals);
         existing.marks.push(row.marks);
@@ -197,12 +217,19 @@ export async function loadLiveFormForTeams(
 
   const byName = new Map<string, LiveFormLine>();
   for (const row of logs.values()) {
-    // Keep chronologically oldest→newest; schedule slice is already that order
+    // Last N games this athlete actually played (oldest → newest)
     const last5Goals = row.goals.slice(-games);
     const last5Disposals = row.disposals.slice(-games);
     const last5Marks = row.marks.slice(-games);
     const last5Tackles = row.tackles.slice(-games);
-    if (last5Disposals.length < 5 && last5Tackles.length < 5) continue;
+    const played = Math.max(
+      last5Goals.length,
+      last5Disposals.length,
+      last5Marks.length,
+      last5Tackles.length,
+    );
+    // Keep partial windows — never invent seed fill-ins for missing athletes
+    if (played < 1) continue;
     byName.set(normalizePersonName(row.name), {
       name: row.name,
       teamId: row.teamId,
@@ -210,12 +237,7 @@ export async function loadLiveFormForTeams(
       last5Disposals,
       last5Marks,
       last5Tackles,
-      games: Math.max(
-        last5Goals.length,
-        last5Disposals.length,
-        last5Marks.length,
-        last5Tackles.length,
-      ),
+      games: played,
     });
   }
 
@@ -225,7 +247,7 @@ export async function loadLiveFormForTeams(
     boxesFetched,
     message:
       teamsCovered > 0
-        ? `Live ESPN form: last ${games} games for ${teamsCovered} club${teamsCovered === 1 ? "" : "s"} (${boxesFetched} box scores)`
+        ? `Live ESPN form: last ${games} played games for ${teamsCovered} club${teamsCovered === 1 ? "" : "s"} (${boxesFetched} box scores scanned)`
         : "Live ESPN form unavailable — BEST will ignore inferred tackle/mark lines",
   };
 }
