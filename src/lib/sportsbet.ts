@@ -3,7 +3,7 @@ import {
   getBookmaker,
   type BookmakerId,
 } from "./bookmakers";
-import { resolveTeamId } from "./teams";
+import { resolveTeamId, resolveTeamIdLoose } from "./teams";
 import type { CandidateLeg, MarketType } from "./types";
 import { combineOdds, confidenceFromFactors, roundOdds, valueScore } from "./engine/odds";
 
@@ -31,6 +31,8 @@ export interface SportsbetStatus {
 export interface MatchH2hPrice {
   homeTeam: string;
   awayTeam: string;
+  homeTeamId?: string;
+  awayTeamId?: string;
   homeOdds: number;
   awayOdds: number;
   eventLink?: string;
@@ -164,11 +166,25 @@ function playerNamesMatch(a: string, b: string): boolean {
 }
 
 function teamNamesMatch(a: string, b: string): boolean {
+  const aId = resolveTeamIdLoose(a);
+  const bId = resolveTeamIdLoose(b);
+  if (aId && bId) return aId === bId;
+
   const na = normalizeName(a);
   const nb = normalizeName(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  if (na.includes(nb) || nb.includes(na)) return true;
+
+  // Never let "Melbourne" match "North Melbourne" via substring
+  if (aId || bId) return false;
+  if (na.includes(nb) || nb.includes(na)) {
+    const shorter = na.length <= nb.length ? na : nb;
+    const longer = na.length <= nb.length ? nb : na;
+    // Only allow includes when the shorter token is a full word-ish chunk
+    // and not a different club's core name
+    if (shorter.length < 5) return false;
+    if (longer !== shorter && longer.split(" ").includes(shorter)) return true;
+  }
   return false;
 }
 
@@ -209,10 +225,10 @@ function findPlayerOverLine(
 }
 
 function teamNamesCompatible(homeA: string, awayA: string, homeB: string, awayB: string): boolean {
-  const aHome = resolveTeamId(homeA.replace(/ Magpies| Lions/g, "").trim()) ?? resolveTeamId(homeA);
-  const aAway = resolveTeamId(awayA.replace(/ Magpies| Lions/g, "").trim()) ?? resolveTeamId(awayA);
-  const bHome = resolveTeamId(homeB.replace(/ Magpies| Lions/g, "").trim()) ?? resolveTeamId(homeB);
-  const bAway = resolveTeamId(awayB.replace(/ Magpies| Lions/g, "").trim()) ?? resolveTeamId(awayB);
+  const aHome = resolveTeamIdLoose(homeA);
+  const aAway = resolveTeamIdLoose(awayA);
+  const bHome = resolveTeamIdLoose(homeB);
+  const bAway = resolveTeamIdLoose(awayB);
 
   if (aHome && aAway && bHome && bAway) {
     return (
@@ -364,13 +380,31 @@ let h2hMemory: { key: string; expiresAt: number; snap: H2hSnapshot } | null =
 function extractH2hPrice(event: SportsbetEventOdds): MatchH2hPrice | null {
   const h2h = event.lines.filter((l) => l.marketKey === "h2h");
   if (h2h.length < 2) return null;
-  const home = h2h.find((l) => teamNamesMatch(l.name, event.homeTeam));
-  const away = h2h.find((l) => teamNamesMatch(l.name, event.awayTeam));
+
+  const homeId = resolveTeamIdLoose(event.homeTeam);
+  const awayId = resolveTeamIdLoose(event.awayTeam);
+
+  const pick = (teamName: string, teamId: string | null) => {
+    // Prefer TeamId match; fall back to strict name match
+    const byId = teamId
+      ? h2h.find((l) => resolveTeamIdLoose(l.name) === teamId)
+      : undefined;
+    if (byId) return byId;
+    return h2h.find((l) => teamNamesMatch(l.name, teamName));
+  };
+
+  const home = pick(event.homeTeam, homeId);
+  const away = pick(event.awayTeam, awayId);
   if (!home || !away) return null;
+  // Same outcome matched twice (North Melbourne ⊆ Melbourne bug) — reject
+  if (home === away || home.name === away.name) return null;
   if (!Number.isFinite(home.price) || !Number.isFinite(away.price)) return null;
+
   return {
     homeTeam: event.homeTeam,
     awayTeam: event.awayTeam,
+    homeTeamId: homeId ?? undefined,
+    awayTeamId: awayId ?? undefined,
     homeOdds: roundOdds(home.price),
     awayOdds: roundOdds(away.price),
     eventLink: home.link ?? away.link ?? event.eventLink,
@@ -464,7 +498,7 @@ export async function loadBookmakerH2hPrices(
   const { unstable_cache } = await import("next/cache");
   const readShared = unstable_cache(
     async () => fetchH2hPricesUncached(book.id),
-    ["sportsbet-h2h-v1", book.id],
+    ["sportsbet-h2h-v2", book.id],
     { revalidate: SHARED_BOARD_REVALIDATE_SEC, tags: ["sportsbet-h2h"] },
   );
   const snap = await readShared();
@@ -506,12 +540,23 @@ export function findH2hPriceForMatchup(
   prices: MatchH2hPrice[],
   homeTeam: string,
   awayTeam: string,
+  homeTeamId?: string,
+  awayTeamId?: string,
 ): MatchH2hPrice | undefined {
-  return prices.find(
-    (p) =>
-      teamNamesCompatible(homeTeam, awayTeam, p.homeTeam, p.awayTeam) ||
-      (teamNamesMatch(homeTeam, p.homeTeam) &&
-        teamNamesMatch(awayTeam, p.awayTeam)),
+  const homeId = homeTeamId ?? resolveTeamIdLoose(homeTeam) ?? undefined;
+  const awayId = awayTeamId ?? resolveTeamIdLoose(awayTeam) ?? undefined;
+
+  if (homeId && awayId) {
+    const byId = prices.find(
+      (p) =>
+        (p.homeTeamId === homeId && p.awayTeamId === awayId) ||
+        (p.homeTeamId === awayId && p.awayTeamId === homeId),
+    );
+    if (byId) return byId;
+  }
+
+  return prices.find((p) =>
+    teamNamesCompatible(homeTeam, awayTeam, p.homeTeam, p.awayTeam),
   );
 }
 

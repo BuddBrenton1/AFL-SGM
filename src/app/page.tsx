@@ -15,7 +15,8 @@ import { BOUNCE_BUILD } from "@/lib/build-info";
 import { formatOdds } from "@/lib/engine/odds";
 import { createSavedSgm } from "@/lib/saved-sgm";
 import { formatSgmForBookmaker } from "@/lib/sgm-export";
-import type { ScanResult, SgmMulti } from "@/lib/types";
+import { resolveTeamIdLoose } from "@/lib/teams";
+import type { ScanResult, SgmMulti, TeamId } from "@/lib/types";
 import { SavedSgmsSection, useSavedSgmIds } from "./components/SavedSgms";
 import { SgmMultiCard } from "./components/SgmMultiCard";
 
@@ -27,6 +28,8 @@ interface FixtureCard {
   venue: string;
   homeTeam: string;
   awayTeam: string;
+  homeTeamId?: TeamId;
+  awayTeamId?: TeamId;
   homeRank: number;
   awayRank: number;
   tipHomeWinProb?: number;
@@ -52,42 +55,34 @@ interface FixtureCard {
 interface MatchH2hPrice {
   homeTeam: string;
   awayTeam: string;
+  homeTeamId?: string;
+  awayTeamId?: string;
   homeOdds: number;
   awayOdds: number;
   eventLink?: string;
   lastUpdate?: string;
 }
 
-function normalizeTeamKey(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(
-      /magpies|blues|bombers|dockers|cats|suns|giants|hawks|demons|kangaroos|power|tigers|saints|swans|eagles|bulldogs|lions|crows/g,
-      "",
-    )
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function teamsLooselyEqual(a: string, b: string): boolean {
-  const na = normalizeTeamKey(a);
-  const nb = normalizeTeamKey(b);
-  if (!na || !nb) return false;
-  return na === nb || na.includes(nb) || nb.includes(na);
-}
-
 function findFixtureH2h(
   prices: MatchH2hPrice[],
   homeTeam: string,
   awayTeam: string,
+  homeTeamId?: TeamId,
+  awayTeamId?: TeamId,
 ): MatchH2hPrice | undefined {
-  return prices.find(
-    (p) =>
-      (teamsLooselyEqual(homeTeam, p.homeTeam) &&
-        teamsLooselyEqual(awayTeam, p.awayTeam)) ||
-      (teamsLooselyEqual(homeTeam, p.awayTeam) &&
-        teamsLooselyEqual(awayTeam, p.homeTeam)),
-  );
+  const homeId = homeTeamId ?? resolveTeamIdLoose(homeTeam) ?? undefined;
+  const awayId = awayTeamId ?? resolveTeamIdLoose(awayTeam) ?? undefined;
+
+  // TeamId match only — never substring ("Melbourne" ⊆ "North Melbourne")
+  if (homeId && awayId) {
+    return prices.find(
+      (p) =>
+        (p.homeTeamId === homeId && p.awayTeamId === awayId) ||
+        (p.homeTeamId === awayId && p.awayTeamId === homeId),
+    );
+  }
+
+  return undefined;
 }
 
 function formatMatchDate(date: string) {
@@ -879,17 +874,28 @@ export default function HomePage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {roundFixtures.map((g, i) => {
             const on = selectedSet.has(g.id);
-            const h2h = findFixtureH2h(matchPrices, g.homeTeam, g.awayTeam);
-            const homeIsListedHome =
+            const homeId = g.homeTeamId ?? resolveTeamIdLoose(g.homeTeam);
+            const awayId = g.awayTeamId ?? resolveTeamIdLoose(g.awayTeam);
+            const h2h = findFixtureH2h(
+              matchPrices,
+              g.homeTeam,
+              g.awayTeam,
+              homeId ?? undefined,
+              awayId ?? undefined,
+            );
+            const sameOrientation =
               h2h &&
-              teamsLooselyEqual(g.homeTeam, h2h.homeTeam);
+              homeId &&
+              awayId &&
+              h2h.homeTeamId === homeId &&
+              h2h.awayTeamId === awayId;
             const homePrice = h2h
-              ? homeIsListedHome
+              ? sameOrientation
                 ? h2h.homeOdds
                 : h2h.awayOdds
               : null;
             const awayPrice = h2h
-              ? homeIsListedHome
+              ? sameOrientation
                 ? h2h.awayOdds
                 : h2h.homeOdds
               : null;

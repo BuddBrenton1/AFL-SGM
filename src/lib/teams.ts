@@ -187,6 +187,37 @@ export function resolveTeamId(name: string | null | undefined): TeamId | null {
   return NAME_LOOKUP.get(name.toLowerCase()) ?? null;
 }
 
+/**
+ * Resolve AFL clubs from Odds API / Squiggle labels.
+ * Prefers the longest alias match so "North Melbourne" wins over "Melbourne".
+ */
+export function resolveTeamIdLoose(name: string | null | undefined): TeamId | null {
+  if (!name) return null;
+  const direct = resolveTeamId(name);
+  if (direct) return direct;
+
+  const lower = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  if (!lower) return null;
+
+  let best: { id: TeamId; len: number } | null = null;
+  for (const team of Object.values(TEAMS)) {
+    for (const alias of [team.name, ...team.aliases]) {
+      const a = alias.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!a) continue;
+      if (lower === a) return team.id;
+      // Substring only for meaningful aliases (avoid "north" alone)
+      if (a.length < 5) continue;
+      if (lower.includes(a) || a.includes(lower)) {
+        if (!best || a.length > best.len) best = { id: team.id, len: a.length };
+      }
+    }
+  }
+  return best?.id ?? null;
+}
+
 export function teamDisplayName(id: TeamId): string {
   return TEAMS[id].name;
 }
