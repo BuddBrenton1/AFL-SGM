@@ -394,6 +394,8 @@ export function collectBestFormLegs(
       ...leg,
       playerId: leg.playerId ?? player?.id,
       playerName: leg.playerName ?? player?.name ?? verified.name,
+      jumper: leg.jumper ?? player?.jumper,
+      teamId: leg.teamId ?? player?.team,
       threshold: verified.clearLine,
       recentFormHits: verified.hits,
       recentFormGames: verified.games,

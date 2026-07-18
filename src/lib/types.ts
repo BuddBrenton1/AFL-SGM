@@ -124,6 +124,12 @@ export interface FixtureGame {
   tipMargin?: number;
 }
 
+export interface RosterGuernseyRef {
+  name: string;
+  jumper: number;
+  teamId: TeamId;
+}
+
 export interface EnrichedGame extends FixtureGame {
   homeLadder: LadderEntry;
   awayLadder: LadderEntry;
@@ -132,6 +138,8 @@ export interface EnrichedGame extends FixtureGame {
   awayInsOuts: TeamInsOuts;
   homePlayers: PlayerProfile[];
   awayPlayers: PlayerProfile[];
+  /** Official AFL team-sheet guernsey numbers when published */
+  rosterGuernseys?: RosterGuernseyRef[];
   homeAdvantage: number;
   expectedTotal: number;
   blowoutRisk: number;

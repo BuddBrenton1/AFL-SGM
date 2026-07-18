@@ -3,9 +3,23 @@ import { resolveTeamId } from "./teams";
 
 interface RosterPlayer {
   playerName?: string;
-  player?: { playerName?: string; givenName?: string; surname?: string };
+  player?: {
+    playerName?: string;
+    givenName?: string;
+    surname?: string;
+    playerJumperNumber?: number;
+    jumperNumber?: number;
+  };
+  playerJumperNumber?: number;
+  jumperNumber?: number;
   selectedPosition?: string;
   position?: string;
+}
+
+export interface RosterGuernsey {
+  name: string;
+  jumper: number;
+  teamId: TeamId;
 }
 
 interface RosterTeam {
@@ -127,6 +141,45 @@ export interface MatchLineupInsOuts {
   home: TeamInsOuts;
   away: TeamInsOuts;
   available: boolean;
+  /** Named players with guernsey numbers from the official sheet */
+  guernseys: RosterGuernsey[];
+}
+
+function jumperFromRosterPlayer(p: unknown): number | null {
+  if (!p || typeof p !== "object") return null;
+  const obj = p as RosterPlayer;
+  const n =
+    obj.playerJumperNumber ??
+    obj.jumperNumber ??
+    obj.player?.playerJumperNumber ??
+    obj.player?.jumperNumber;
+  if (n == null || !Number.isFinite(Number(n))) return null;
+  const jumper = Number(n);
+  return jumper > 0 && jumper < 100 ? jumper : null;
+}
+
+function guernseysFromSide(
+  teamId: TeamId,
+  side: RosterTeam | undefined,
+): RosterGuernsey[] {
+  if (!side) return [];
+  const rows = [
+    ...(side.positions ?? []),
+    ...(side.players ?? []),
+    ...(side.ins ?? []),
+  ];
+  const out: RosterGuernsey[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const name = playerLabel(row);
+    const jumper = jumperFromRosterPlayer(row);
+    if (!name || jumper == null) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, jumper, teamId });
+  }
+  return out;
 }
 
 function teamFromRoster(
@@ -200,6 +253,7 @@ export async function fetchMatchLineupInsOuts(
         notes: ["Official team sheet not published yet"],
       },
       available: false,
+      guernseys: [],
     };
   }
   if (!res.ok) return null;
@@ -209,12 +263,17 @@ export async function fetchMatchLineupInsOuts(
   };
   const home = teamFromRoster(homeTeamId, data.matchRoster?.homeTeam);
   const away = teamFromRoster(awayTeamId, data.matchRoster?.awayTeam);
+  const guernseys = [
+    ...guernseysFromSide(homeTeamId, data.matchRoster?.homeTeam),
+    ...guernseysFromSide(awayTeamId, data.matchRoster?.awayTeam),
+  ];
   return {
     home,
     away,
     available:
       home.ins.length + home.outs.length + away.ins.length + away.outs.length >
-      0,
+      0 || guernseys.length > 0,
+    guernseys,
   };
 }
 

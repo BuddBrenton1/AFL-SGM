@@ -36,12 +36,14 @@ import {
   seasonFormQuality,
 } from "./engine/scanner";
 import { applyLiveFormToPlayers, loadLiveFormForTeams } from "./live-form";
+import { enrichLegsWithGuernsey } from "./guernsey";
 import { getWeatherForFixture } from "./weather";
 import { fetchAflInjuryRows, type AflInjuryRow } from "./afl-injuries";
 import {
   fetchAflMatchRefs,
   fetchMatchLineupInsOuts,
   findAflMatchRef,
+  type RosterGuernsey,
 } from "./afl-lineups";
 
 function fallbackLadder(teamId: FixtureGame["homeTeamId"], rank: number): LadderEntry {
@@ -65,6 +67,7 @@ export function enrichGame(
     weather?: WeatherSnapshot;
     homeInsOuts?: TeamInsOuts;
     awayInsOuts?: TeamInsOuts;
+    rosterGuernseys?: RosterGuernsey[];
   },
 ): EnrichedGame {
   const homeLadder =
@@ -104,6 +107,7 @@ export function enrichGame(
       extras?.awayInsOuts ?? resolveInsOuts({ team: game.awayTeamId }),
     homePlayers: playersForTeam(game.homeTeamId),
     awayPlayers: playersForTeam(game.awayTeamId),
+    rosterGuernseys: extras?.rosterGuernseys,
     homeAdvantage,
     expectedTotal,
     blowoutRisk,
@@ -149,10 +153,10 @@ export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
   );
   const weatherMap = new Map(weatherEntries);
 
-  // Official team sheets when published (limit concurrent calls)
+  // Official team sheets + guernsey numbers when published (limit concurrent calls)
   const lineupByGameId = new Map<
     number,
-    { home: TeamInsOuts; away: TeamInsOuts }
+    { home: TeamInsOuts; away: TeamInsOuts; guernseys: RosterGuernsey[] }
   >();
   const lineupTargets = games.slice(0, 12);
   await Promise.all(
@@ -170,8 +174,12 @@ export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
           g.homeTeamId,
           g.awayTeamId,
         );
-        if (lineup?.available) {
-          lineupByGameId.set(g.id, { home: lineup.home, away: lineup.away });
+        if (lineup && (lineup.available || lineup.guernseys.length > 0)) {
+          lineupByGameId.set(g.id, {
+            home: lineup.home,
+            away: lineup.away,
+            guernseys: lineup.guernseys,
+          });
         }
       } catch {
         /* ignore single-match failures */
@@ -193,6 +201,7 @@ export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
         lineup: lineup?.away,
         injuries,
       }),
+      rosterGuernseys: lineup?.guernseys,
     });
   });
 }
@@ -335,11 +344,17 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
 
     // L5 hit badges — ESPN full last-5 only
     legs = annotateLegsWithRecentForm(legs, gameLive, liveForm.byName);
+    // Club colour + jumper from AFL team sheet / ESPN form / seed roster
+    legs = enrichLegsWithGuernsey(legs, gameLive, liveForm.byName);
 
     if (req.perfectFormOnly) {
       // Strict: raw book board lines only + ESPN re-verified 5/5
-      const locks = annotateLegsWithRecentForm(
-        boardLegs.filter(isVerifiedSportsbetLeg),
+      const locks = enrichLegsWithGuernsey(
+        annotateLegsWithRecentForm(
+          boardLegs.filter(isVerifiedSportsbetLeg),
+          gameLive,
+          liveForm.byName,
+        ),
         gameLive,
         liveForm.byName,
       ).filter((leg) => isPerfectFormSbLeg(leg, liveForm.byName));
@@ -382,8 +397,12 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     }
 
     // BEST: live board player-prop lines ONLY (no model→price overlays)
-    const bestPool = annotateLegsWithRecentForm(
-      boardLegs.filter(isVerifiedSportsbetLeg),
+    const bestPool = enrichLegsWithGuernsey(
+      annotateLegsWithRecentForm(
+        boardLegs.filter(isVerifiedSportsbetLeg),
+        gameLive,
+        liveForm.byName,
+      ),
       gameLive,
       liveForm.byName,
     );
@@ -405,6 +424,7 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
         liveByName: liveForm.byName,
       });
       if (best) {
+        best.legs = enrichLegsWithGuernsey(best.legs, gameLive, liveForm.byName);
         // Belt-and-braces: every BEST leg must be board-backed + ESPN 5/5
         if (
           best.legs.every((l) => isPerfectFormSbLeg(l, liveForm.byName))
