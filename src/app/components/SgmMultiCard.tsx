@@ -4,6 +4,7 @@ import type { BookmakerOption } from "@/lib/bookmakers";
 import { formatOdds } from "@/lib/engine/odds";
 import { formatAud } from "@/lib/paper-bankroll";
 import type { SgmMulti } from "@/lib/types";
+import { PlayerLegLabel } from "./PlayerLegLabel";
 
 function confidenceTone(c: number) {
   if (c >= 0.72) return "bg-[var(--orange)] text-[#111]";
@@ -130,7 +131,12 @@ export function SgmMultiCard(props: {
           >
             <span className="font-medium text-[var(--ink)]">
               <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
-              {leg.label}
+              <PlayerLegLabel
+                label={leg.label}
+                playerName={leg.playerName}
+                teamId={leg.teamId}
+                jumper={leg.jumper}
+              />
               {leg.sportsbetOdds != null && (
                 <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#111]">
                   {book.shortLabel}

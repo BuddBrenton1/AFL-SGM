@@ -14,6 +14,7 @@ import {
   summarizePaperBankroll,
 } from "@/lib/paper-bankroll";
 import {
+  isArchivedSavedSgm,
   loadSavedSgms,
   persistSavedSgms,
   removeSavedSgm,
@@ -22,6 +23,7 @@ import {
   type SavedSgm,
 } from "@/lib/saved-sgm";
 import { autoSettleFromGame, type GameResultPayload } from "@/lib/settle";
+import { PlayerLegLabel } from "./PlayerLegLabel";
 
 const POLL_MS = 45_000;
 
@@ -155,8 +157,216 @@ export function SavedSgmsSection() {
     [items, startingCash],
   );
 
+  const { activeItems, archivedItems } = useMemo(() => {
+    const active: SavedSgm[] = [];
+    const archived: SavedSgm[] = [];
+    for (const item of items) {
+      if (isArchivedSavedSgm(item)) archived.push(item);
+      else active.push(item);
+    }
+    return { activeItems: active, archivedItems: archived };
+  }, [items]);
+
   function handleDelete(id: string) {
     setItems((prev) => removeSavedSgm(id, prev));
+  }
+
+  function renderTradeCard(item: SavedSgm) {
+    const hits = item.legResults.filter((r) => r.outcome === "won").length;
+    const misses = item.legResults.filter((r) => r.outcome === "lost").length;
+    const voids = item.legResults.filter((r) => r.outcome === "void").length;
+    const pending = item.legResults.filter(
+      (r) => r.outcome === "pending",
+    ).length;
+    const stake = item.stake ?? 0;
+    const profit = paperProfit(item);
+    const toReturn = stake > 0 ? stake * item.combinedOdds : 0;
+
+    return (
+      <article
+        key={item.id}
+        className="border border-[var(--line)] bg-[var(--bg-panel)] p-5 md:p-6"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Round {item.round} · {item.venue} ·{" "}
+              {stake > 0 ? "paper bet" : "watch"} ·{" "}
+              {new Date(item.savedAt).toLocaleString("en-AU", {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+            <h3
+              className="font-[family-name:var(--font-teko)] text-3xl text-[var(--ink)]"
+              style={{ fontWeight: 600 }}
+            >
+              {item.matchup}
+            </h3>
+            {(item.gameStatus.homeScore != null ||
+              item.gameStatus.espnStatusText) && (
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                {item.gameStatus.espnStatusText
+                  ? `${item.gameStatus.espnStatusText} · `
+                  : ""}
+                {item.gameStatus.homeTeam}{" "}
+                {item.gameStatus.homeScore ?? "–"} –{" "}
+                {item.gameStatus.awayScore ?? "–"}{" "}
+                {item.gameStatus.awayTeam}
+                {item.gameStatus.complete >= 100 && item.gameStatus.winner
+                  ? ` · ${item.gameStatus.winner} won`
+                  : ""}
+              </p>
+            )}
+            <p className="mt-1 text-[11px] text-[var(--muted)]">
+              Legs {hits} hit · {misses} miss · {voids} void · {pending} live
+            </p>
+          </div>
+          <div className="text-right">
+            <p
+              className="font-[family-name:var(--font-teko)] text-4xl text-[var(--leather)]"
+              style={{ fontWeight: 600 }}
+            >
+              {formatOdds(item.combinedOdds)}
+            </p>
+            {stake > 0 && (
+              <p className="mt-1 text-sm text-[var(--ink)]">
+                Stake {formatAud(stake)}
+                {isOpenPaperTrade(item.multiOutcome) ? (
+                  <span className="text-[var(--muted)]">
+                    {" "}
+                    · to return {formatAud(toReturn)}
+                  </span>
+                ) : profit != null ? (
+                  <span
+                    className={
+                      profit > 0
+                        ? "text-[var(--orange)]"
+                        : profit < 0
+                          ? "text-[#ffb4a0]"
+                          : "text-[var(--muted)]"
+                    }
+                  >
+                    {" "}
+                    · {profit > 0 ? "+" : ""}
+                    {formatAud(profit)}
+                    {item.multiOutcome === "won"
+                      ? ` (paid ${formatAud(paperReturn(item))})`
+                      : ""}
+                  </span>
+                ) : null}
+              </p>
+            )}
+            <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+              <span
+                className={`inline-block px-2 py-1 text-xs font-semibold ${outcomeTone(item.multiOutcome)}`}
+              >
+                {outcomeLabel(item.multiOutcome)}
+              </span>
+              <span className="text-xs text-[var(--muted)]">
+                {(item.confidence * 100).toFixed(0)}% model conf
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleDelete(item.id)}
+              className="mt-2 text-xs font-semibold text-[var(--muted)] underline"
+            >
+              {stake > 0 && isOpenPaperTrade(item.multiOutcome)
+                ? "Cancel & refund"
+                : "Remove"}
+            </button>
+          </div>
+        </div>
+
+        <ol className="mt-4 space-y-2">
+          {item.legs.map((leg, i) => {
+            const result =
+              item.legResults.find((r) => r.legId === leg.id) ?? {
+                legId: leg.id,
+                outcome: "pending" as const,
+              };
+
+            return (
+              <li
+                key={leg.id}
+                className="border-b border-[var(--line)] pb-2 text-sm last:border-0"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-[var(--ink)]">
+                    <span className="mr-2 text-[var(--muted)]">{i + 1}.</span>
+                    <PlayerLegLabel
+                      label={leg.label}
+                      playerName={leg.playerName}
+                      teamId={leg.teamId}
+                      jumper={leg.jumper}
+                    />
+                    {leg.recentFormGames != null &&
+                      leg.recentFormGames > 0 && (
+                        <span
+                          className={`ml-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                            leg.recentFormHits === leg.recentFormGames
+                              ? "border border-[var(--orange)] text-[var(--orange)]"
+                              : "border border-[var(--line)] text-[var(--muted)]"
+                          }`}
+                        >
+                          L{leg.recentFormGames} {leg.recentFormHits}/
+                          {leg.recentFormGames}
+                        </span>
+                      )}
+                    {result.outcome === "won" && (
+                      <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111]">
+                        Hit
+                      </span>
+                    )}
+                    {result.outcome === "lost" && (
+                      <span className="ml-2 bg-[#3a2420] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#ffb4a0]">
+                        Miss
+                      </span>
+                    )}
+                    {result.outcome === "void" && (
+                      <span className="ml-2 bg-[#2a2a3a] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#b8c0ff]">
+                        Void
+                      </span>
+                    )}
+                    {result.outcome === "pending" &&
+                      result.actual != null &&
+                      /benched|emergency|scratch|limited minutes|involvement/i.test(
+                        result.note ?? "",
+                      ) && (
+                        <span className="ml-2 bg-[#2a2a3a] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#b8c0ff]">
+                          Watch
+                        </span>
+                      )}
+                    {result.outcome === "pending" && result.actual != null && (
+                      <span className="ml-2 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--orange)]">
+                        Live {result.actual}
+                        {leg.threshold != null ? `/${leg.threshold}+` : ""}
+                      </span>
+                    )}
+                  </span>
+                  <span className={`font-semibold ${legTone(result.outcome)}`}>
+                    {formatOdds(leg.sportsbetOdds ?? leg.odds)}
+                    {result.outcome === "void"
+                      ? " · void"
+                      : result.actual != null && result.outcome !== "pending"
+                        ? ` · ${result.actual}`
+                        : ""}
+                  </span>
+                </div>
+                {result.note && (
+                  <p className="mt-1 text-[11px] text-[var(--muted)]">
+                    {result.note}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </article>
+    );
   }
 
   function handleResetBankroll() {
@@ -289,212 +499,43 @@ export function SavedSgmsSection() {
         </p>
       ) : (
         <div className="grid gap-4">
-          {items.map((item) => {
-            const hits = item.legResults.filter((r) => r.outcome === "won").length;
-            const misses = item.legResults.filter(
-              (r) => r.outcome === "lost",
-            ).length;
-            const voids = item.legResults.filter(
-              (r) => r.outcome === "void",
-            ).length;
-            const pending = item.legResults.filter(
-              (r) => r.outcome === "pending",
-            ).length;
-            const stake = item.stake ?? 0;
-            const profit = paperProfit(item);
-            const toReturn = stake > 0 ? stake * item.combinedOdds : 0;
+          {activeItems.length === 0 && archivedItems.length > 0 && (
+            <p className="border border-[var(--line)] bg-[var(--bg-panel)] p-4 text-sm text-[var(--muted)]">
+              No open paper trades — settled games are in Archived below.
+            </p>
+          )}
+          {activeItems.map(renderTradeCard)}
 
-            return (
-              <article
-                key={item.id}
-                className="border border-[var(--line)] bg-[var(--bg-panel)] p-5 md:p-6"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
+          {archivedItems.length > 0 && (
+            <details className="group border border-[var(--line)] bg-[var(--bg-panel)]">
+              <summary className="cursor-pointer list-none px-5 py-4 md:px-6">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
-                      Round {item.round} · {item.venue} ·{" "}
-                      {stake > 0 ? "paper bet" : "watch"} ·{" "}
-                      {new Date(item.savedAt).toLocaleString("en-AU", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      Folder
                     </p>
                     <h3
                       className="font-[family-name:var(--font-teko)] text-3xl text-[var(--ink)]"
                       style={{ fontWeight: 600 }}
                     >
-                      {item.matchup}
+                      Archived
                     </h3>
-                    {(item.gameStatus.homeScore != null ||
-                      item.gameStatus.espnStatusText) && (
-                      <p className="mt-1 text-sm text-[var(--muted)]">
-                        {item.gameStatus.espnStatusText
-                          ? `${item.gameStatus.espnStatusText} · `
-                          : ""}
-                        {item.gameStatus.homeTeam}{" "}
-                        {item.gameStatus.homeScore ?? "–"} –{" "}
-                        {item.gameStatus.awayScore ?? "–"}{" "}
-                        {item.gameStatus.awayTeam}
-                        {item.gameStatus.complete >= 100 &&
-                        item.gameStatus.winner
-                          ? ` · ${item.gameStatus.winner} won`
-                          : ""}
-                      </p>
-                    )}
-                    <p className="mt-1 text-[11px] text-[var(--muted)]">
-                      Legs {hits} hit · {misses} miss · {voids} void · {pending}{" "}
-                      live
+                    <p className="text-sm text-[var(--muted)]">
+                      Finished games move here once settled — bankroll history
+                      stays intact.
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p
-                      className="font-[family-name:var(--font-teko)] text-4xl text-[var(--leather)]"
-                      style={{ fontWeight: 600 }}
-                    >
-                      {formatOdds(item.combinedOdds)}
-                    </p>
-                    {stake > 0 && (
-                      <p className="mt-1 text-sm text-[var(--ink)]">
-                        Stake {formatAud(stake)}
-                        {isOpenPaperTrade(item.multiOutcome) ? (
-                          <span className="text-[var(--muted)]">
-                            {" "}
-                            · to return {formatAud(toReturn)}
-                          </span>
-                        ) : profit != null ? (
-                          <span
-                            className={
-                              profit > 0
-                                ? "text-[var(--orange)]"
-                                : profit < 0
-                                  ? "text-[#ffb4a0]"
-                                  : "text-[var(--muted)]"
-                            }
-                          >
-                            {" "}
-                            · {profit > 0 ? "+" : ""}
-                            {formatAud(profit)}
-                            {item.multiOutcome === "won"
-                              ? ` (paid ${formatAud(paperReturn(item))})`
-                              : ""}
-                          </span>
-                        ) : null}
-                      </p>
-                    )}
-                    <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
-                      <span
-                        className={`inline-block px-2 py-1 text-xs font-semibold ${outcomeTone(item.multiOutcome)}`}
-                      >
-                        {outcomeLabel(item.multiOutcome)}
-                      </span>
-                      <span className="text-xs text-[var(--muted)]">
-                        {(item.confidence * 100).toFixed(0)}% model conf
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(item.id)}
-                      className="mt-2 text-xs font-semibold text-[var(--muted)] underline"
-                    >
-                      {stake > 0 && isOpenPaperTrade(item.multiOutcome)
-                        ? "Cancel & refund"
-                        : "Remove"}
-                    </button>
-                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[var(--orange)]">
+                    {archivedItems.length} game
+                    {archivedItems.length === 1 ? "" : "s"} · expand
+                  </span>
                 </div>
-
-                <ol className="mt-4 space-y-2">
-                  {item.legs.map((leg, i) => {
-                    const result =
-                      item.legResults.find((r) => r.legId === leg.id) ?? {
-                        legId: leg.id,
-                        outcome: "pending" as const,
-                      };
-
-                    return (
-                      <li
-                        key={leg.id}
-                        className="border-b border-[var(--line)] pb-2 text-sm last:border-0"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium text-[var(--ink)]">
-                            <span className="mr-2 text-[var(--muted)]">
-                              {i + 1}.
-                            </span>
-                            {leg.label}
-                            {leg.recentFormGames != null &&
-                              leg.recentFormGames > 0 && (
-                                <span
-                                  className={`ml-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                    leg.recentFormHits === leg.recentFormGames
-                                      ? "border border-[var(--orange)] text-[var(--orange)]"
-                                      : "border border-[var(--line)] text-[var(--muted)]"
-                                  }`}
-                                >
-                                  L{leg.recentFormGames} {leg.recentFormHits}/
-                                  {leg.recentFormGames}
-                                </span>
-                              )}
-                            {result.outcome === "won" && (
-                              <span className="ml-2 bg-[var(--orange)] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#111]">
-                                Hit
-                              </span>
-                            )}
-                            {result.outcome === "lost" && (
-                              <span className="ml-2 bg-[#3a2420] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#ffb4a0]">
-                                Miss
-                              </span>
-                            )}
-                            {result.outcome === "void" && (
-                              <span className="ml-2 bg-[#2a2a3a] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#b8c0ff]">
-                                Void
-                              </span>
-                            )}
-                            {result.outcome === "pending" &&
-                              result.actual != null &&
-                              /benched|emergency|scratch|limited minutes|involvement/i.test(
-                                result.note ?? "",
-                              ) && (
-                                <span className="ml-2 bg-[#2a2a3a] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[#b8c0ff]">
-                                  Watch
-                                </span>
-                              )}
-                            {result.outcome === "pending" &&
-                              result.actual != null && (
-                                <span className="ml-2 bg-black/30 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-[var(--orange)]">
-                                  Live {result.actual}
-                                  {leg.threshold != null
-                                    ? `/${leg.threshold}+`
-                                    : ""}
-                                </span>
-                              )}
-                          </span>
-                          <span
-                            className={`font-semibold ${legTone(result.outcome)}`}
-                          >
-                            {formatOdds(leg.sportsbetOdds ?? leg.odds)}
-                            {result.outcome === "void"
-                              ? " · void"
-                              : result.actual != null &&
-                                  result.outcome !== "pending"
-                                ? ` · ${result.actual}`
-                                : ""}
-                          </span>
-                        </div>
-                        {result.note && (
-                          <p className="mt-1 text-[11px] text-[var(--muted)]">
-                            {result.note}
-                          </p>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-              </article>
-            );
-          })}
+              </summary>
+              <div className="grid gap-4 border-t border-[var(--line)] p-5 md:p-6">
+                {archivedItems.map(renderTradeCard)}
+              </div>
+            </details>
+          )}
         </div>
       )}
     </section>

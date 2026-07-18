@@ -1,11 +1,33 @@
 import { NextResponse } from "next/server";
 import { loadEnrichedFixtures } from "@/lib/scan";
+import { fetchCompletedGames } from "@/lib/squiggle";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const games = await loadEnrichedFixtures();
+    const [games, completed] = await Promise.all([
+      loadEnrichedFixtures(),
+      fetchCompletedGames().catch(() => []),
+    ]);
+
+    // Recent finished fixtures for the Archived folder (not scannable)
+    const archived = completed.slice(0, 30).map((g) => ({
+      id: g.id,
+      round: g.round,
+      roundName: g.roundName,
+      date: g.date,
+      venue: g.venue,
+      homeTeam: g.homeTeam,
+      awayTeam: g.awayTeam,
+      homeTeamId: g.homeTeamId,
+      awayTeamId: g.awayTeamId,
+      homeScore: g.homeScore,
+      awayScore: g.awayScore,
+      winner: g.winner,
+      complete: g.complete,
+    }));
+
     return NextResponse.json({
       games: games.map((g) => ({
         id: g.id,
@@ -35,6 +57,7 @@ export async function GET() {
           factors: g.prediction.factors,
         },
       })),
+      archived,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load fixtures";

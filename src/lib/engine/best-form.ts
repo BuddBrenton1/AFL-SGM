@@ -179,6 +179,8 @@ export function annotateLegsWithRecentForm(
       ...leg,
       playerId: leg.playerId ?? player?.id,
       playerName: leg.playerName ?? player?.name ?? verified.name,
+      jumper: leg.jumper ?? player?.jumper,
+      teamId: leg.teamId ?? player?.team,
       recentFormHits: verified.hits,
       recentFormGames: verified.games,
       recentFormValues: verified.values,

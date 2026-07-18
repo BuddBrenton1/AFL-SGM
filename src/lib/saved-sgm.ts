@@ -16,6 +16,7 @@ export interface SavedLegSnapshot {
   shortLabel: string;
   playerName?: string;
   teamId?: TeamId;
+  jumper?: number;
   threshold?: number;
   odds: number;
   sportsbetOdds?: number;
@@ -109,6 +110,7 @@ export function createSavedSgm(
       shortLabel: l.shortLabel,
       playerName: l.playerName,
       teamId: l.teamId,
+      jumper: l.jumper,
       threshold: l.threshold,
       odds: l.odds,
       sportsbetOdds: l.sportsbetOdds,
@@ -164,6 +166,16 @@ export function isPlayerMarket(market: MarketType): boolean {
     market === "player_disposal" ||
     market === "player_mark" ||
     market === "player_tackle"
+  );
+}
+
+/** Finished + settled paper trades — shown in the Archived folder. */
+export function isArchivedSavedSgm(item: SavedSgm): boolean {
+  return (
+    item.gameStatus.complete >= 100 &&
+    (item.multiOutcome === "won" ||
+      item.multiOutcome === "lost" ||
+      item.multiOutcome === "void")
   );
 }
 

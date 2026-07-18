@@ -1271,8 +1271,8 @@ export function legsFromSportsbetBoard(
     id: number;
     homeTeam: string;
     awayTeam: string;
-    homePlayers: { id: string; name: string; team: string }[];
-    awayPlayers: { id: string; name: string; team: string }[];
+    homePlayers: { id: string; name: string; team: string; jumper?: number }[];
+    awayPlayers: { id: string; name: string; team: string; jumper?: number }[];
   },
   bookmakerId: BookmakerId = DEFAULT_BOOKMAKER,
 ): CandidateLeg[] {
@@ -1320,6 +1320,7 @@ export function legsFromSportsbetBoard(
       playerId: player?.id,
       playerName: spec.playerName,
       teamId: player?.team as CandidateLeg["teamId"],
+      jumper: player?.jumper,
       threshold: spec.threshold,
       probability,
       odds: sportsbetOdds,

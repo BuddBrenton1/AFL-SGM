@@ -63,6 +63,22 @@ interface MatchH2hPrice {
   lastUpdate?: string;
 }
 
+interface ArchivedFixture {
+  id: number;
+  round: number;
+  roundName: string;
+  date: string;
+  venue: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeTeamId?: TeamId;
+  awayTeamId?: TeamId;
+  homeScore?: number;
+  awayScore?: number;
+  winner?: string;
+  complete: number;
+}
+
 function findFixtureH2h(
   prices: MatchH2hPrice[],
   homeTeam: string,
@@ -98,6 +114,9 @@ function formatMatchDate(date: string) {
 
 export default function HomePage() {
   const [fixtures, setFixtures] = useState<FixtureCard[]>([]);
+  const [archivedFixtures, setArchivedFixtures] = useState<ArchivedFixture[]>(
+    [],
+  );
   const [selectedRound, setSelectedRound] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [legCount, setLegCount] = useState(10);
@@ -146,7 +165,8 @@ export default function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    async function loadFixtures(initial: boolean) {
       try {
         const [fixRes, sbRes] = await Promise.all([
           fetch("/api/fixtures"),
@@ -155,24 +175,44 @@ export default function HomePage() {
         const data = await fixRes.json();
         const sb = await sbRes.json();
         if (!fixRes.ok) throw new Error(data.error || "Failed to load fixtures");
-        if (!cancelled) {
-          const games = data.games as FixtureCard[];
+        if (cancelled) return;
+
+        const games = (data.games ?? []) as FixtureCard[];
+        const archived = (data.archived ?? []) as ArchivedFixture[];
+        const liveIds = new Set(games.map((g) => g.id));
+        setFixtures(games);
+        setArchivedFixtures(archived);
+        setSportsbetStatus(sb);
+
+        if (initial) {
           const upcomingRound = games[0]?.round ?? null;
-          setFixtures(games);
           setSelectedRound(upcomingRound);
           setSelectedGames(
             upcomingRound == null
               ? []
               : games.filter((g) => g.round === upcomingRound).map((g) => g.id),
           );
-          setSportsbetStatus(sb);
+        } else {
+          // Finished games leave the scannable list → drop from selection
+          setSelectedGames((prev) => prev.filter((id) => liveIds.has(id)));
+          setSelectedRound((prev) => {
+            if (prev != null && games.some((g) => g.round === prev)) return prev;
+            return games[0]?.round ?? null;
+          });
         }
       } catch (e) {
-        if (!cancelled) setLoadError(e instanceof Error ? e.message : "Load failed");
+        if (!cancelled && initial) {
+          setLoadError(e instanceof Error ? e.message : "Load failed");
+        }
       }
-    })();
+    }
+
+    void loadFixtures(true);
+    // Re-check so completed games leave the board into Archived
+    const id = window.setInterval(() => void loadFixtures(false), 5 * 60_000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
     // Initial fixture load only — bookmaker status refreshes below
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1032,6 +1072,64 @@ export default function HomePage() {
             );
           })}
         </div>
+
+        {archivedFixtures.length > 0 && (
+          <details className="mt-6 border border-[var(--line)] bg-[var(--bg-panel)]">
+            <summary className="cursor-pointer list-none px-4 py-4 md:px-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    Folder
+                  </p>
+                  <h3
+                    className="font-[family-name:var(--font-teko)] text-3xl text-[var(--ink)]"
+                    style={{ fontWeight: 600 }}
+                  >
+                    Archived games
+                  </h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    Finished matches leave the scan board and land here with
+                    final scores.
+                  </p>
+                </div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-[var(--orange)]">
+                  {archivedFixtures.length} · expand
+                </span>
+              </div>
+            </summary>
+            <div className="grid gap-2 border-t border-[var(--line)] p-4 sm:grid-cols-2 lg:grid-cols-3 md:p-5">
+              {archivedFixtures.map((g) => (
+                <div
+                  key={g.id}
+                  className="border border-[var(--line)] bg-black/20 p-3"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">
+                    {g.roundName} · {formatMatchDate(g.date)} · {g.venue}
+                  </p>
+                  <p
+                    className="mt-1 font-[family-name:var(--font-teko)] text-2xl leading-none text-[var(--ink)]"
+                    style={{ fontWeight: 600 }}
+                  >
+                    {g.homeTeam}{" "}
+                    <span className="text-[var(--leather)]">
+                      {g.homeScore ?? "–"}
+                    </span>
+                    <span className="mx-1 text-[var(--muted)]">–</span>
+                    <span className="text-[var(--leather)]">
+                      {g.awayScore ?? "–"}
+                    </span>{" "}
+                    {g.awayTeam}
+                  </p>
+                  {g.winner && (
+                    <p className="mt-1 text-[11px] text-[var(--muted)]">
+                      {g.winner} won
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </section>
 
       <section

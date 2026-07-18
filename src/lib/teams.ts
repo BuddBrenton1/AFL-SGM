@@ -221,3 +221,11 @@ export function resolveTeamIdLoose(name: string | null | undefined): TeamId | nu
 export function teamDisplayName(id: TeamId): string {
   return TEAMS[id].name;
 }
+
+export function teamColors(id: TeamId): { primary: string; secondary: string } {
+  return TEAMS[id].colors;
+}
+
+export function teamShort(id: TeamId): string {
+  return TEAMS[id].short;
+}

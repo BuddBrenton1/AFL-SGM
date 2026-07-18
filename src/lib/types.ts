@@ -154,6 +154,8 @@ export interface CandidateLeg {
   playerId?: string;
   playerName?: string;
   teamId?: TeamId;
+  /** Guernsey number when known (from roster seed / lineup) */
+  jumper?: number;
   threshold?: number;
   /** estimated true probability 0–1 */
   probability: number;
