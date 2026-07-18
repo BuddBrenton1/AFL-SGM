@@ -54,7 +54,7 @@ function correlationPenalty(legs: CandidateLeg[]): number {
   for (const leg of legs) {
     groups.set(leg.correlationGroup, (groups.get(leg.correlationGroup) ?? 0) + 1);
     if (leg.playerId) {
-      if (players.has(leg.playerId)) penalty += 0.12;
+      if (players.has(leg.playerId)) penalty += 0.22;
       players.add(leg.playerId);
     }
   }
@@ -79,6 +79,145 @@ function correlationPenalty(legs: CandidateLeg[]): number {
   }
 
   return penalty;
+}
+
+/**
+ * Season / recent-form quality for a leg (0–1).
+ * Prefers ESPN last-5 hit rate when present; else model confidence
+ * (already blended with season hit rates in leg generation).
+ */
+export function seasonFormQuality(leg: CandidateLeg): number {
+  if (
+    leg.recentFormGames != null &&
+    leg.recentFormGames > 0 &&
+    leg.recentFormHits != null
+  ) {
+    const l5 = leg.recentFormHits / leg.recentFormGames;
+    // Blend L5 with model confidence so season prior still matters
+    return clamp(l5 * 0.65 + leg.confidence * 0.35, 0, 1);
+  }
+  return clamp(leg.confidence, 0, 1);
+}
+
+function avgSeasonForm(legs: CandidateLeg[]): number {
+  if (!legs.length) return 0;
+  return legs.reduce((a, l) => a + seasonFormQuality(l), 0) / legs.length;
+}
+
+/**
+ * Keep one player-prop line per player+market — the best season/form backed
+ * option. Stops "Gawn 20+ / 25+ / 30+" remixing into dozens of near-duplicate SGMs.
+ */
+export function prunePoolBySeasonForm(legs: CandidateLeg[]): CandidateLeg[] {
+  const best = new Map<string, CandidateLeg>();
+  const passthrough: CandidateLeg[] = [];
+
+  for (const leg of legs) {
+    if (!leg.playerId || leg.threshold == null) {
+      passthrough.push(leg);
+      continue;
+    }
+    const key = `${leg.playerId}:${leg.market}`;
+    const prev = best.get(key);
+    if (!prev) {
+      best.set(key, leg);
+      continue;
+    }
+    const q = seasonFormQuality(leg);
+    const pq = seasonFormQuality(prev);
+    if (q > pq + 0.03) {
+      best.set(key, leg);
+      continue;
+    }
+    if (pq > q + 0.03) continue;
+    // Form roughly equal — prefer higher confidence, then better value, then nearer mid line
+    if (leg.confidence > prev.confidence + 0.02) {
+      best.set(key, leg);
+      continue;
+    }
+    if (prev.confidence > leg.confidence + 0.02) continue;
+    if (leg.valueScore > prev.valueScore + 0.01) {
+      best.set(key, leg);
+      continue;
+    }
+    if (prev.valueScore > leg.valueScore + 0.01) continue;
+    // Prefer the higher threshold only when form still supports it (less filler)
+    if ((leg.threshold ?? 0) > (prev.threshold ?? 0) && q >= 0.55) {
+      best.set(key, leg);
+    }
+  }
+
+  return [...passthrough, ...best.values()];
+}
+
+function legSetOverlap(a: CandidateLeg[], b: CandidateLeg[]): number {
+  if (!a.length || !b.length) return 0;
+  const ids = new Set(b.map((l) => l.id));
+  const shared = a.filter((l) => ids.has(l.id)).length;
+  return shared / Math.min(a.length, b.length);
+}
+
+function playerSetJaccard(a: CandidateLeg[], b: CandidateLeg[]): number {
+  const pa = new Set(a.map((l) => l.playerId).filter((x): x is string => !!x));
+  const pb = new Set(b.map((l) => l.playerId).filter((x): x is string => !!x));
+  if (!pa.size || !pb.size) return 0;
+  let inter = 0;
+  for (const p of pa) if (pb.has(p)) inter++;
+  const union = pa.size + pb.size - inter;
+  return union ? inter / union : 0;
+}
+
+/**
+ * Pick a compact, non-repetitive card: reject high leg/player overlap and
+ * cap how often the same player appears across returned SGMs.
+ */
+export function selectDiverseMultis(
+  ranked: SgmMulti[],
+  maxResults: number,
+): SgmMulti[] {
+  const selected: SgmMulti[] = [];
+  const playerUses = new Map<string, number>();
+  const maxPlayerAppearances = Math.max(2, Math.ceil(maxResults / 3));
+
+  for (const m of ranked) {
+    if (selected.length >= maxResults) break;
+
+    const sig = m.legs
+      .map((l) => l.id)
+      .sort()
+      .join();
+    if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) {
+      continue;
+    }
+
+    const tooClose = selected.some((s) => {
+      // Shared legs ≥ half → remix of the same props
+      if (legSetOverlap(m.legs, s.legs) >= 0.5) return true;
+      // Same cast of players even with different thresholds/markets
+      if (playerSetJaccard(m.legs, s.legs) >= 0.55) return true;
+      return false;
+    });
+    if (tooClose) continue;
+
+    const players = m.legs
+      .map((l) => l.playerId)
+      .filter((x): x is string => !!x);
+    if (players.length) {
+      const overused = players.filter(
+        (p) => (playerUses.get(p) ?? 0) >= maxPlayerAppearances,
+      );
+      if (overused.length >= Math.max(2, Math.ceil(players.length * 0.35))) {
+        continue;
+      }
+    }
+
+    selected.push(m);
+    for (const p of new Set(players)) {
+      playerUses.set(p, (playerUses.get(p) ?? 0) + 1);
+    }
+  }
+
+  return selected;
 }
 
 export function composeSgmMulti(
@@ -455,14 +594,16 @@ function buildTowardTargetPrice(
         const nearMaxBonus = preferNearMax ? priceFit(candOdds) * 1.1 : 0;
         const underTargetBoost =
           product < target * 0.85 ? Math.log(candOdds) * 1.6 : 0;
+        const formBonus = seasonFormQuality(cand) * 0.85;
 
         const score =
           progress * 4.5 +
           nearMaxBonus +
           underTargetBoost +
+          formBonus +
           legEdge(cand) * 0.3 -
           overshoot -
-          correlationPenalty([...picked, cand]) * 0.35;
+          correlationPenalty([...picked, cand]) * 0.55;
 
         checked++;
         if (score > bestScore) {
@@ -497,11 +638,14 @@ function buildTowardTargetPrice(
     if (variant) combos.push(variant);
   }
 
-  const byConf = [...workPool].sort(
-    (a, b) => b.confidence - a.confidence || legPrice(b) - legPrice(a),
+  const byForm = [...workPool].sort(
+    (a, b) =>
+      seasonFormQuality(b) - seasonFormQuality(a) ||
+      b.confidence - a.confidence ||
+      legPrice(b) - legPrice(a),
   );
-  const confStack = chase(byConf, undefined, true);
-  if (confStack) combos.push(confStack);
+  const formStack = chase(byForm, undefined, true);
+  if (formStack) combos.push(formStack);
 
   for (let i = 0; i < Math.min(6, maxResults * 2); i++) {
     const shuffled = [...workPool].sort(() => Math.random() - 0.5);
@@ -572,16 +716,33 @@ export function deepScanGame(opts: {
       Math.max(1.12, effectiveMax * 0.72),
     );
 
-    let shortLegs = sourceLegs.filter((l) => legPrice(l) <= effectiveMax + 1e-9);
+    let shortLegs = prunePoolBySeasonForm(
+      sourceLegs.filter((l) => legPrice(l) <= effectiveMax + 1e-9),
+    );
+    // Soft-drop weak season/L5 props when the pool is deep enough
+    const solidForm = shortLegs.filter(
+      (l) =>
+        !l.playerId ||
+        seasonFormQuality(l) >= 0.45 ||
+        (l.recentFormHits != null &&
+          l.recentFormGames != null &&
+          l.recentFormHits / Math.max(l.recentFormGames, 1) >= 0.4),
+    );
+    if (solidForm.length >= Math.min(10, maxLegs + 4)) {
+      shortLegs = solidForm;
+    }
     const nearMax = shortLegs.filter((l) => legPrice(l) >= minPreferred - 1e-9);
     if (nearMax.length >= Math.min(8, maxLegs + 2)) {
       shortLegs = nearMax;
     }
 
     const rankedShort = [...shortLegs].sort(
-      (a, b) => legPrice(b) - legPrice(a) || legEdge(b) - legEdge(a),
+      (a, b) =>
+        seasonFormQuality(b) - seasonFormQuality(a) ||
+        legPrice(b) - legPrice(a) ||
+        legEdge(b) - legEdge(a),
     );
-    const pool = rankedShort.slice(0, Math.min(rankedShort.length, 80));
+    const pool = rankedShort.slice(0, Math.min(rankedShort.length, 64));
     const candidatesEvaluated = opts.legs.length;
 
     const { combos, checked } = buildTowardTargetPrice(
@@ -636,42 +797,37 @@ export function deepScanGame(opts: {
           Math.log(Math.max(target, 2)),
         avgLeg:
           m.legs.reduce((a, l) => a + legPrice(l), 0) / Math.max(m.legs.length, 1),
+        form: avgSeasonForm(m.legs),
       }))
       .sort((a, b) => {
         const scoreA =
           -a.dist * 2.8 +
-          a.avgLeg * 0.4 +
-          a.multi.edgeScore * 0.35 +
+          a.avgLeg * 0.35 +
+          a.form * 1.1 +
+          a.multi.edgeScore * 0.3 +
           a.multi.sportsbetCoverage * 0.08;
         const scoreB =
           -b.dist * 2.8 +
-          b.avgLeg * 0.4 +
-          b.multi.edgeScore * 0.35 +
+          b.avgLeg * 0.35 +
+          b.form * 1.1 +
+          b.multi.edgeScore * 0.3 +
           b.multi.sportsbetCoverage * 0.08;
         return scoreB - scoreA;
       })
       .map((x) => x.multi);
 
-    const selected: SgmMulti[] = [];
-    for (const m of filtered) {
-      const sig = m.legs
-        .map((l) => l.id)
-        .sort()
-        .join();
-      const overlapNeeded = Math.max(2, Math.floor(m.legs.length * 0.75));
-      const tooClose = selected.some((s) => {
-        const shared = s.legs.filter((l) => m.legs.some((x) => x.id === l.id)).length;
-        return shared >= overlapNeeded;
-      });
-      if (tooClose) continue;
-      if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) continue;
+    const selected = selectDiverseMultis(filtered, maxResults);
+    for (const m of selected) {
       if (!m.rationale.some((r) => r.includes("Target-price"))) {
         m.rationale.push(
           `Target ~$${target} · ≤${maxLegs} legs · each ≤ $${effectiveMax.toFixed(2)} (hard cap)`,
         );
       }
-      selected.push(m);
-      if (selected.length >= maxResults) break;
+      if (!m.rationale.some((r) => r.includes("Season/form"))) {
+        m.rationale.push(
+          `Season/form prune: one line per player+market · diversified card (avg form ${(avgSeasonForm(m.legs) * 100).toFixed(0)}%)`,
+        );
+      }
     }
 
     return { multis: selected, candidatesEvaluated, combinationsChecked };
@@ -682,36 +838,50 @@ export function deepScanGame(opts: {
   const minOdds = requested >= 12 ? 1.08 : requested >= 8 ? 1.12 : 1.15;
   const maxProb = requested >= 12 ? 0.96 : 0.9;
 
-  const usable = sourceLegs.filter((l) => {
-    const gateOdds = l.modelOdds ?? l.odds;
-    // Accept if either model or live price clears the floor (keeps short SB favs + model legs)
-    return (
-      (l.odds >= minOdds || gateOdds >= minOdds) &&
-      l.probability <= maxProb
-    );
-  });
+  const usable = prunePoolBySeasonForm(
+    sourceLegs.filter((l) => {
+      const gateOdds = l.modelOdds ?? l.odds;
+      // Accept if either model or live price clears the floor (keeps short SB favs + model legs)
+      return (
+        (l.odds >= minOdds || gateOdds >= minOdds) &&
+        l.probability <= maxProb
+      );
+    }),
+  );
   const ranked = [...usable].sort((a, b) => {
     const spiceA = Math.min(Math.log(a.odds), 2.2) * 0.15;
     const spiceB = Math.min(Math.log(b.odds), 2.2) * 0.15;
     const sbBoostA = a.sportsbetOdds != null ? 0.08 : 0;
     const sbBoostB = b.sportsbetOdds != null ? 0.08 : 0;
-    return legEdge(b) + spiceB + sbBoostB - (legEdge(a) + spiceA + sbBoostA);
+    const formA = seasonFormQuality(a) * 0.35;
+    const formB = seasonFormQuality(b) * 0.35;
+    return (
+      legEdge(b) +
+      spiceB +
+      sbBoostB +
+      formB -
+      (legEdge(a) + spiceA + sbBoostA + formA)
+    );
   });
 
   const poolSize =
     requested >= 20
-      ? Math.min(ranked.length, 80)
+      ? Math.min(ranked.length, 64)
       : requested >= 12
-        ? Math.min(ranked.length, 55)
+        ? Math.min(ranked.length, 48)
         : requested >= 8
-          ? Math.min(ranked.length, 36)
+          ? Math.min(ranked.length, 32)
           : Math.min(ranked.length, 20);
   let pool = ranked.slice(0, Math.max(poolSize, requested));
 
   if (pool.length < requested) {
-    pool = [...sourceLegs]
-      .sort((a, b) => legEdge(b) - legEdge(a))
-      .slice(0, Math.min(sourceLegs.length, Math.max(requested + 10, 80)));
+    pool = prunePoolBySeasonForm([...sourceLegs])
+      .sort(
+        (a, b) =>
+          seasonFormQuality(b) - seasonFormQuality(a) ||
+          legEdge(b) - legEdge(a),
+      )
+      .slice(0, Math.min(sourceLegs.length, Math.max(requested + 10, 64)));
   }
   const candidatesEvaluated = opts.legs.length;
 
@@ -733,30 +903,19 @@ export function deepScanGame(opts: {
     .sort(
       (a, b) =>
         b.edgeScore +
+        avgSeasonForm(b.legs) * 0.4 +
         priceAttractiveness(b.combinedOdds) +
         b.sportsbetCoverage * 0.1 -
-        (a.edgeScore + priceAttractiveness(a.combinedOdds) + a.sportsbetCoverage * 0.1),
+        (a.edgeScore +
+          avgSeasonForm(a.legs) * 0.4 +
+          priceAttractiveness(a.combinedOdds) +
+          a.sportsbetCoverage * 0.1),
     );
   if (!filtered.length) {
     filtered = multis.sort((a, b) => b.edgeScore - a.edgeScore);
   }
 
-  const selected: SgmMulti[] = [];
-  for (const m of filtered) {
-    const sig = m.legs
-      .map((l) => l.id)
-      .sort()
-      .join();
-    const overlapNeeded = Math.max(2, Math.floor(m.legs.length * 0.75));
-    const tooClose = selected.some((s) => {
-      const shared = s.legs.filter((l) => m.legs.some((x) => x.id === l.id)).length;
-      return shared >= overlapNeeded;
-    });
-    if (tooClose) continue;
-    if (selected.some((s) => s.legs.map((l) => l.id).sort().join() === sig)) continue;
-    selected.push(m);
-    if (selected.length >= maxResults) break;
-  }
+  const selected = selectDiverseMultis(filtered, maxResults);
 
   return { multis: selected, candidatesEvaluated, combinationsChecked };
 }

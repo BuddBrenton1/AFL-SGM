@@ -294,7 +294,7 @@ export default function HomePage() {
             perfectFormOnly,
             bookmaker,
             gameIds: selectedGames.length ? selectedGames : undefined,
-            maxResults: 12,
+            maxResults: 8,
           }),
         });
         const data = await res.json();

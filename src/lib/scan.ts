@@ -30,7 +30,11 @@ import type {
 import { BOUNCE_BUILD, BOUNCE_BUILD_NOTE } from "./build-info";
 import { generateLegsForGame } from "./engine/legs";
 import { predictMatch } from "./engine/predict";
-import { deepScanGame } from "./engine/scanner";
+import {
+  deepScanGame,
+  selectDiverseMultis,
+  seasonFormQuality,
+} from "./engine/scanner";
 import { applyLiveFormToPlayers, loadLiveFormForTeams } from "./live-form";
 import { getWeatherForFixture } from "./weather";
 import { fetchAflInjuryRows, type AflInjuryRow } from "./afl-injuries";
@@ -418,7 +422,15 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
   const minConf = Math.min(0.95, Math.max(0, req.minConfidence ?? 0));
   let multis = allMultis
     .filter((m) => m.confidence >= minConf)
-    .sort((a, b) => b.edgeScore - a.edgeScore);
+    .sort((a, b) => {
+      const formA =
+        a.legs.reduce((s, l) => s + seasonFormQuality(l), 0) /
+        Math.max(a.legs.length, 1);
+      const formB =
+        b.legs.reduce((s, l) => s + seasonFormQuality(l), 0) /
+        Math.max(b.legs.length, 1);
+      return formB * 0.45 + b.edgeScore - (formA * 0.45 + a.edgeScore);
+    });
 
   // Prefer fully live-priced multis when requested, but never blank the card
   if (req.sportsbetOnly) {
@@ -497,10 +509,14 @@ export async function runDeepScan(req: ScanRequest): Promise<ScanResult> {
     );
   }
 
-  multis = multis.slice(0, maxResults);
+  // Final card: fewer near-duplicate player-prop remixes
+  multis = selectDiverseMultis(multis, maxResults);
 
   scanNotes.push(
     `Target ~$${req.targetOdds ?? 15} · max ${req.legCount ?? 10} legs · each ≤ $${legCap.toFixed(2)}`,
+  );
+  scanNotes.push(
+    `Season/form diversity: one line per player+market, then de-dupe overlapping SGMs (${multis.length} shown)`,
   );
   if (minConf > 0) {
     scanNotes.push(
