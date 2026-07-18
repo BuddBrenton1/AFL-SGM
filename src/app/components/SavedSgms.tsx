@@ -96,9 +96,7 @@ export function SavedSgmsSection() {
     setHydrated(true);
   }, []);
 
-  // Backfill jumper numbers for paper trades saved before guernsey fix
-  useEffect(() => {
-    if (!hydrated || !items.length) return;
+  const guernseyTeamKey = useMemo(() => {
     const teams = [
       ...new Set(
         items.flatMap((item) =>
@@ -107,13 +105,18 @@ export function SavedSgmsSection() {
             .filter((t): t is NonNullable<typeof t> => !!t),
         ),
       ),
-    ];
-    if (!teams.length) return;
+    ].sort();
+    return teams.join(",");
+  }, [items]);
+
+  // Backfill jumper numbers for paper trades saved before guernsey fix
+  useEffect(() => {
+    if (!hydrated || !guernseyTeamKey) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await fetch(
-          `/api/guernseys?teams=${encodeURIComponent(teams.join(","))}`,
+          `/api/guernseys?teams=${encodeURIComponent(guernseyTeamKey)}`,
         );
         if (!res.ok) return;
         const data = (await res.json()) as {
@@ -134,10 +137,11 @@ export function SavedSgmsSection() {
               if (leg.jumper != null || !leg.playerName) return leg;
               const jumper = map.get(normPlayerKey(leg.playerName));
               if (jumper == null) {
-                // try surname-only soft match
                 const last = normPlayerKey(leg.playerName).split(" ").pop();
                 const hit = last
-                  ? [...map.entries()].find(([k]) => k.endsWith(` ${last}`) || k === last)
+                  ? [...map.entries()].find(
+                      ([k]) => k.endsWith(` ${last}`) || k === last,
+                    )
                   : undefined;
                 if (!hit) return leg;
                 changed = true;
@@ -158,7 +162,7 @@ export function SavedSgmsSection() {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, items.length]);
+  }, [hydrated, guernseyTeamKey]);
 
   const refreshResults = useCallback(async (list: SavedSgm[]) => {
     if (!list.length) return list;
