@@ -96,16 +96,17 @@ export function enrichLegsWithGuernsey(
         : undefined);
 
     const teamId =
-      leg.teamId ??
       sheet?.teamId ??
       live?.teamId ??
       rosterPlayer?.team ??
-      seed?.team;
+      seed?.team ??
+      leg.teamId;
+    // Prefer official sheet number over stale seed jumpers
     const jumper =
-      leg.jumper ??
       sheet?.jumper ??
       rosterPlayer?.jumper ??
-      seed?.jumper;
+      seed?.jumper ??
+      leg.jumper;
 
     if (teamId === leg.teamId && jumper === leg.jumper) return leg;
 

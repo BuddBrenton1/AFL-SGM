@@ -68,12 +68,25 @@ function legTone(outcome: string) {
   return "text-[var(--muted)]";
 }
 
+function normPlayerKey(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['’.]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 export function SavedSgmsSection() {
   const [items, setItems] = useState<SavedSgm[]>([]);
   const [startingCash, setStartingCash] = useState(PAPER_STARTING_CASH);
   const [hydrated, setHydrated] = useState(false);
   const [checking, setChecking] = useState(false);
   const [lastPoll, setLastPoll] = useState<string | null>(null);
+  const [jumperByName, setJumperByName] = useState<Map<string, number>>(
+    () => new Map(),
+  );
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -82,6 +95,70 @@ export function SavedSgmsSection() {
     setStartingCash(loadPaperBankroll().startingCash);
     setHydrated(true);
   }, []);
+
+  // Backfill jumper numbers for paper trades saved before guernsey fix
+  useEffect(() => {
+    if (!hydrated || !items.length) return;
+    const teams = [
+      ...new Set(
+        items.flatMap((item) =>
+          item.legs
+            .map((l) => l.teamId)
+            .filter((t): t is NonNullable<typeof t> => !!t),
+        ),
+      ),
+    ];
+    if (!teams.length) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/guernseys?teams=${encodeURIComponent(teams.join(","))}`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          guernseys?: { name: string; jumper: number; teamId: string }[];
+        };
+        if (cancelled || !data.guernseys?.length) return;
+        const map = new Map<string, number>();
+        for (const g of data.guernseys) {
+          map.set(normPlayerKey(g.name), g.jumper);
+        }
+        setJumperByName(map);
+
+        // Persist onto saved legs so shirt numbers stick offline
+        setItems((prev) => {
+          let changed = false;
+          const next = prev.map((item) => {
+            const legs = item.legs.map((leg) => {
+              if (leg.jumper != null || !leg.playerName) return leg;
+              const jumper = map.get(normPlayerKey(leg.playerName));
+              if (jumper == null) {
+                // try surname-only soft match
+                const last = normPlayerKey(leg.playerName).split(" ").pop();
+                const hit = last
+                  ? [...map.entries()].find(([k]) => k.endsWith(` ${last}`) || k === last)
+                  : undefined;
+                if (!hit) return leg;
+                changed = true;
+                return { ...leg, jumper: hit[1] };
+              }
+              changed = true;
+              return { ...leg, jumper };
+            });
+            return legs === item.legs ? item : { ...item, legs };
+          });
+          if (changed) persistSavedSgms(next);
+          return changed ? next : prev;
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, items.length]);
 
   const refreshResults = useCallback(async (list: SavedSgm[]) => {
     if (!list.length) return list;
@@ -301,7 +378,12 @@ export function SavedSgmsSection() {
                       label={leg.label}
                       playerName={leg.playerName}
                       teamId={leg.teamId}
-                      jumper={leg.jumper}
+                      jumper={
+                        leg.jumper ??
+                        (leg.playerName
+                          ? jumperByName.get(normPlayerKey(leg.playerName))
+                          : undefined)
+                      }
                     />
                     {leg.recentFormGames != null &&
                       leg.recentFormGames > 0 && (

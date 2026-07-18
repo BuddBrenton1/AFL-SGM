@@ -1,4 +1,4 @@
 /** Bumped on each scanner ship so the live UI proves which build is deployed. */
-export const BOUNCE_BUILD = "guernsey-icons";
+export const BOUNCE_BUILD = "guernsey-numbers";
 export const BOUNCE_BUILD_NOTE =
-  "Player props show AFL guernsey icons (# from official team sheet). Stamp must read guernsey-icons.";
+  "Guernsey icons show player jumper numbers (not club codes). Stamp must read guernsey-numbers.";

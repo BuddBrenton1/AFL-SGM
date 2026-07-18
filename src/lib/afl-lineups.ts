@@ -1,5 +1,5 @@
 import type { TeamId, TeamInsOuts } from "./types";
-import { resolveTeamId } from "./teams";
+import { resolveTeamId, resolveTeamIdLoose } from "./teams";
 
 interface RosterPlayer {
   playerName?: string;
@@ -31,26 +31,38 @@ interface RosterTeam {
   players?: RosterPlayer[];
 }
 
+function nameFromPlayerNameField(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  const given = typeof obj.givenName === "string" ? obj.givenName : "";
+  const surname = typeof obj.surname === "string" ? obj.surname : "";
+  const full = `${given} ${surname}`.trim();
+  return full || null;
+}
+
 function playerLabel(p: unknown): string | null {
   if (!p) return null;
   if (typeof p === "string") return p.trim() || null;
   if (typeof p !== "object") return null;
   const obj = p as Record<string, unknown>;
-  if (typeof obj.playerName === "string" && obj.playerName.trim()) {
-    return obj.playerName.trim();
-  }
+
+  // Flat string, or AFL nested { player: { playerName: { givenName, surname } } }
+  const direct = nameFromPlayerNameField(obj.playerName);
+  if (direct) return direct;
+
   const nested = obj.player as Record<string, unknown> | undefined;
-  if (nested && typeof nested.playerName === "string") {
-    return nested.playerName.trim();
+  if (nested) {
+    const fromNested = nameFromPlayerNameField(nested.playerName);
+    if (fromNested) return fromNested;
+    const given = typeof nested.givenName === "string" ? nested.givenName : "";
+    const surname = typeof nested.surname === "string" ? nested.surname : "";
+    const full = `${given} ${surname}`.trim();
+    if (full) return full;
   }
-  const given =
-    (typeof nested?.givenName === "string" && nested.givenName) ||
-    (typeof obj.givenName === "string" && obj.givenName) ||
-    "";
-  const surname =
-    (typeof nested?.surname === "string" && nested.surname) ||
-    (typeof obj.surname === "string" && obj.surname) ||
-    "";
+
+  const given = typeof obj.givenName === "string" ? obj.givenName : "";
+  const surname = typeof obj.surname === "string" ? obj.surname : "";
   const full = `${given} ${surname}`.trim();
   return full || null;
 }
@@ -125,8 +137,9 @@ export async function fetchAflMatchRefs(
         round: m.round?.roundNumber ?? 0,
         homeTeam,
         awayTeam,
-        homeTeamId: resolveTeamId(homeTeam),
-        awayTeamId: resolveTeamId(awayTeam),
+        // Loose resolve so "West Coast Eagles" / "Gold Coast SUNS" map correctly
+        homeTeamId: resolveTeamId(homeTeam) ?? resolveTeamIdLoose(homeTeam),
+        awayTeamId: resolveTeamId(awayTeam) ?? resolveTeamIdLoose(awayTeam),
         status: m.status,
       });
     }
@@ -289,4 +302,37 @@ export function findAflMatchRef(
       ((r.homeTeamId === homeTeamId && r.awayTeamId === awayTeamId) ||
         (r.homeTeamId === awayTeamId && r.awayTeamId === homeTeamId)),
   );
+}
+
+/** Most recent concluded match involving this club (for guernsey fallback). */
+export function findLatestConcludedMatchForTeam(
+  refs: AflMatchRef[],
+  teamId: TeamId,
+): AflMatchRef | undefined {
+  const concluded = refs.filter(
+    (r) =>
+      (r.status ?? "").toUpperCase() === "CONCLUDED" &&
+      (r.homeTeamId === teamId || r.awayTeamId === teamId),
+  );
+  // refs are page order (earlier rounds first) — take the last one
+  return concluded.length ? concluded[concluded.length - 1] : undefined;
+}
+
+/**
+ * Load guernsey numbers for a club from its latest concluded team sheet.
+ * Used when the upcoming match roster isn't published yet.
+ */
+export async function fetchClubGuernseysFromLatestMatch(
+  refs: AflMatchRef[],
+  teamId: TeamId,
+): Promise<RosterGuernsey[]> {
+  const ref = findLatestConcludedMatchForTeam(refs, teamId);
+  if (!ref?.homeTeamId || !ref?.awayTeamId) return [];
+  const lineup = await fetchMatchLineupInsOuts(
+    ref.providerId,
+    ref.homeTeamId,
+    ref.awayTeamId,
+  );
+  if (!lineup?.guernseys.length) return [];
+  return lineup.guernseys.filter((g) => g.teamId === teamId);
 }

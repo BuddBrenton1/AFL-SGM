@@ -24,6 +24,7 @@ import type {
   ScanRequest,
   ScanResult,
   SgmMulti,
+  TeamId,
   TeamInsOuts,
   WeatherSnapshot,
 } from "./types";
@@ -41,6 +42,7 @@ import { getWeatherForFixture } from "./weather";
 import { fetchAflInjuryRows, type AflInjuryRow } from "./afl-injuries";
 import {
   fetchAflMatchRefs,
+  fetchClubGuernseysFromLatestMatch,
   fetchMatchLineupInsOuts,
   findAflMatchRef,
   type RosterGuernsey,
@@ -187,8 +189,38 @@ export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
     }),
   );
 
+  // Club guernsey cache from each team's latest concluded sheet — covers
+  // board players when the upcoming team sheet isn't out yet.
+  const clubsNeeded = [
+    ...new Set(games.flatMap((g) => [g.homeTeamId, g.awayTeamId])),
+  ] as TeamId[];
+  const clubGuernseyEntries = await Promise.all(
+    clubsNeeded.map(async (teamId) => {
+      try {
+        const rows = await fetchClubGuernseysFromLatestMatch(
+          matchRefsResult.refs,
+          teamId,
+        );
+        return [teamId, rows] as const;
+      } catch {
+        return [teamId, [] as RosterGuernsey[]] as const;
+      }
+    }),
+  );
+  const clubGuernseys = new Map(clubGuernseyEntries);
+
   return games.map((g) => {
     const lineup = lineupByGameId.get(g.id);
+    const fromSheet = lineup?.guernseys ?? [];
+    const fromClubs = [
+      ...(clubGuernseys.get(g.homeTeamId) ?? []),
+      ...(clubGuernseys.get(g.awayTeamId) ?? []),
+    ];
+    // Upcoming sheet wins; fill gaps from last completed club sheets
+    const byName = new Map<string, RosterGuernsey>();
+    for (const row of [...fromClubs, ...fromSheet]) {
+      byName.set(row.name.toLowerCase(), row);
+    }
     return enrichGame(g, ladderByTeam, {
       weather: weatherMap.get(weatherKey(g)),
       homeInsOuts: resolveInsOuts({
@@ -201,7 +233,7 @@ export async function loadEnrichedFixtures(): Promise<EnrichedGame[]> {
         lineup: lineup?.away,
         injuries,
       }),
-      rosterGuernseys: lineup?.guernseys,
+      rosterGuernseys: [...byName.values()],
     });
   });
 }

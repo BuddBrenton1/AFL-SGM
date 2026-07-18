@@ -125,7 +125,7 @@ export const PLAYERS: PlayerProfile[] = [
   p("bri-daniher", "Joe Daniher", "brisbane", "key-forward", 3, form({ goalsAvg: 2.3, disposalsAvg: 13, marksAvg: 7, last5Goals: [3, 2, 4, 1, 3], goalHitRates: { "1+": 0.9, "2+": 0.7, "3+": 0.42 } })),
   p("bri-hipwood", "Eric Hipwood", "brisbane", "key-forward", 30, form({ goalsAvg: 1.8, disposalsAvg: 11, marksAvg: 5, last5Goals: [2, 1, 3, 2, 1] })),
   p("bri-neale", "Lachie Neale", "brisbane", "midfielder", 9, form({ goalsAvg: 0.5, disposalsAvg: 30, last5Disposals: [33, 28, 32, 27, 31], disposalHitRates: { "20+": 0.98, "25+": 0.92, "30+": 0.7 } })),
-  p("bri-dunkley", "Josh Dunkley", "brisbane", "midfielder", 7, form({ goalsAvg: 0.4, disposalsAvg: 26, tacklesAvg: 7 })),
+  p("bri-dunkley", "Josh Dunkley", "brisbane", "midfielder", 5, form({ goalsAvg: 0.4, disposalsAvg: 26, tacklesAvg: 7 })),
   p("bri-ashcroft", "Will Ashcroft", "brisbane", "midfielder", 8, form({ goalsAvg: 0.6, disposalsAvg: 25 })),
   p("bri-cameron", "Charlie Cameron", "brisbane", "medium-forward", 23, form({ goalsAvg: 1.9, disposalsAvg: 12, last5Goals: [2, 3, 1, 2, 2] })),
 

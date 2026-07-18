@@ -87,7 +87,8 @@ export function PlayerLegLabel(props: {
     ? label.slice(playerName.length).trimStart()
     : "";
   const fg = inkOnTeamColor(team.colors.primary, team.colors.secondary);
-  const badge = jumper != null ? String(jumper) : team.short.slice(0, 3);
+  // Always show the player number when known — never the club abbreviation
+  const badge = jumper != null ? String(jumper) : "";
   const title = `${team.name}${jumper != null ? ` · #${jumper}` : ""}`;
 
   return (
