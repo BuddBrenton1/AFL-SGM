@@ -3,10 +3,18 @@ import {
   fetchAflMatchRefs,
   fetchClubGuernseysFromLatestMatch,
 } from "@/lib/afl-lineups";
-import { resolveTeamIdLoose } from "@/lib/teams";
+import { resolveTeamId, resolveTeamIdLoose, TEAMS } from "@/lib/teams";
 import type { TeamId } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+function parseTeamParam(raw: string): TeamId | null {
+  const key = raw.trim();
+  if (!key) return null;
+  // Paper trades send canonical ids like "westcoast"
+  if (key in TEAMS) return key as TeamId;
+  return resolveTeamId(key) ?? resolveTeamIdLoose(key);
+}
 
 /** Resolve jumper numbers for clubs (from latest concluded AFL team sheets). */
 export async function GET(request: Request) {
@@ -19,14 +27,15 @@ export async function GET(request: Request) {
 
   const teamIds = [
     ...new Set(
-      raw
-        .map((t) => resolveTeamIdLoose(t))
-        .filter((t): t is TeamId => t != null),
+      raw.map(parseTeamParam).filter((t): t is TeamId => t != null),
     ),
   ];
 
   if (!teamIds.length) {
-    return NextResponse.json({ guernseys: [] });
+    return NextResponse.json({
+      guernseys: [],
+      error: `No clubs resolved from: ${raw.join(",")}`,
+    });
   }
 
   try {

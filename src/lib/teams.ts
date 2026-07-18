@@ -183,6 +183,10 @@ export const TEAMS: Record<TeamId, TeamMeta> = {
 
 const NAME_LOOKUP = new Map<string, TeamId>();
 for (const team of Object.values(TEAMS)) {
+  // Accept canonical ids (westcoast) as well as display aliases
+  NAME_LOOKUP.set(team.id.toLowerCase(), team.id);
+  NAME_LOOKUP.set(team.name.toLowerCase(), team.id);
+  NAME_LOOKUP.set(team.short.toLowerCase(), team.id);
   for (const alias of team.aliases) {
     NAME_LOOKUP.set(alias.toLowerCase(), team.id);
   }
@@ -190,7 +194,9 @@ for (const team of Object.values(TEAMS)) {
 
 export function resolveTeamId(name: string | null | undefined): TeamId | null {
   if (!name) return null;
-  return NAME_LOOKUP.get(name.toLowerCase()) ?? null;
+  const key = name.toLowerCase().trim();
+  if (key in TEAMS) return key as TeamId;
+  return NAME_LOOKUP.get(key) ?? null;
 }
 
 /**
@@ -202,6 +208,16 @@ export function resolveTeamIdLoose(name: string | null | undefined): TeamId | nu
   const direct = resolveTeamId(name);
   if (direct) return direct;
 
+  // Compact form: "westcoast" / "wce" already handled above; also try de-spaced
+  const compact = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (compact in TEAMS) return compact as TeamId;
+  for (const team of Object.values(TEAMS)) {
+    if (team.short.toLowerCase() === compact) return team.id;
+    if (team.name.toLowerCase().replace(/[^a-z0-9]/g, "") === compact) {
+      return team.id;
+    }
+  }
+
   const lower = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
@@ -210,7 +226,7 @@ export function resolveTeamIdLoose(name: string | null | undefined): TeamId | nu
 
   let best: { id: TeamId; len: number } | null = null;
   for (const team of Object.values(TEAMS)) {
-    for (const alias of [team.name, ...team.aliases]) {
+    for (const alias of [team.name, team.short, ...team.aliases]) {
       const a = alias.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
       if (!a) continue;
       if (lower === a) return team.id;

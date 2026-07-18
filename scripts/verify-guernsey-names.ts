@@ -9,6 +9,12 @@ import {
 } from "../src/lib/afl-lineups";
 
 async function main() {
+  const { resolveTeamId, resolveTeamIdLoose } = await import("../src/lib/teams");
+  assert.equal(resolveTeamId("westcoast"), "westcoast");
+  assert.equal(resolveTeamIdLoose("westcoast"), "westcoast");
+  assert.equal(resolveTeamId("WCE"), "westcoast");
+  assert.equal(resolveTeamId("West Coast Eagles"), "westcoast");
+
   const refs = await fetchAflMatchRefs(2026);
   assert.ok(refs.length > 20, "expected season match refs");
 
